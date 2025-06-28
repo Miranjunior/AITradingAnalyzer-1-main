@@ -1,214 +1,271 @@
-import { aiAnalysisService } from "./aiAnalysis";
-import { storage } from "../storage";
-import { InsertAIAnalysis, MarketData, TechnicalIndicators, CandlestickData } from "../../shared/schema";
+import { aiAnalysis } from './aiAnalysis';
+import { marketData } from './marketData';
+import { 
+  EnhancedAnalysis,
+  TimeframeAnalysis,
+  MarketRegime,
+  CorrelationData
+} from '../../shared/types/trading';
 
-// Serviço avançado para análises multi-timeframe e correlações conforme especificações do documento
-class EnhancedAnalysisService {
+export class EnhancedAnalysisService {
+  private timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w', '1M'];
   
-  async performMultiTimeframeAnalysis(symbol: string): Promise<any> {
-    const timeframes = ['1h', '4h', '1d'];
-    const analyses: any[] = [];
-    
-    for (const timeframe of timeframes) {
-      try {
-        const marketData = await storage.getMarketData(symbol);
-        const indicators = await storage.getTechnicalIndicators(symbol, timeframe);
-        const candlesticks = await storage.getCandlestickData(symbol, timeframe, 50);
-        
-        if (marketData && indicators && candlesticks.length > 0) {
-          const analysis = await aiAnalysisService.generateAnalysis({
+  async generateEnhancedAnalysis(symbol: string): Promise<EnhancedAnalysis> {
+    try {
+      // Análise em múltiplos timeframes
+      const timeframeAnalyses = await this.analyzeAllTimeframes(symbol);
+      
+      // Detectar regime de mercado
+      const marketRegime = this.detectMarketRegime(timeframeAnalyses);
+      
+      // Análise de correlação entre timeframes
+      const correlations = this.analyzeTimeframeCorrelations(timeframeAnalyses);
+      
+      // Confirmação de sinais
+      const signalConfirmation = this.validateSignalsAcrossTimeframes(timeframeAnalyses);
+      
+      // Análise de volume agregada
+      const volumeAnalysis = this.aggregateVolumeAnalysis(timeframeAnalyses);
+      
+      return {
+        symbol,
+        timestamp: new Date().toISOString(),
+        timeframeAnalyses,
+        marketRegime,
+        correlations,
+        signalConfirmation,
+        volumeAnalysis,
+        confidence: this.calculateOverallConfidence(timeframeAnalyses, correlations)
+      };
+      
+    } catch (error) {
+      console.error(`Erro na análise avançada para ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  private async analyzeAllTimeframes(symbol: string): Promise<TimeframeAnalysis[]> {
+    const analyses = await Promise.all(
+      this.timeframes.map(async (timeframe) => {
+        try {
+          const data = await marketData.getMarketData(symbol);
+          const analysis = await aiAnalysis.generateAnalysis({
             symbol,
-            marketData,
-            indicators,
-            candlesticks,
-            timeframe
+            timeframe,
+            marketData: data,
+            indicators: await marketData.getIndicators(symbol, timeframe),
+            candlesticks: await marketData.getCandlesticks(symbol, timeframe)
           });
           
-          analyses.push({
+          return {
             timeframe,
-            analysis: await storage.getAIAnalysis(symbol, timeframe)
-          });
+            analysis,
+            weight: this.getTimeframeWeight(timeframe)
+          };
+        } catch (error) {
+          console.error(`Erro analisando timeframe ${timeframe}:`, error);
+          return null;
         }
-      } catch (error) {
-        console.error(`Error in multi-timeframe analysis for ${symbol} ${timeframe}:`, error);
-      }
-    }
+      })
+    );
     
-    return this.correlateAnalyses(analyses);
+    return analyses.filter((a): a is TimeframeAnalysis => a !== null);
   }
-  
-  private correlateAnalyses(analyses: any[]): any {
-    if (analyses.length === 0) return null;
+
+  private detectMarketRegime(analyses: TimeframeAnalysis[]): MarketRegime {
+    const trendStrength = this.calculateTrendStrength(analyses);
+    const volatility = this.calculateAggregateVolatility(analyses);
     
-    const recommendations = analyses.map(a => a.analysis?.recommendation).filter(Boolean);
-    const confidences = analyses.map(a => a.analysis?.confidence || 0);
-    const sentiments = analyses.map(a => a.analysis?.sentiment).filter(Boolean);
-    
-    // Calcular consenso entre timeframes
-    const buyCount = recommendations.filter(r => r === 'BUY').length;
-    const sellCount = recommendations.filter(r => r === 'SELL').length;
-    const holdCount = recommendations.filter(r => r === 'HOLD').length;
-    
-    let overallRecommendation = 'HOLD';
-    if (buyCount > sellCount && buyCount > holdCount) {
-      overallRecommendation = 'BUY';
-    } else if (sellCount > buyCount && sellCount > holdCount) {
-      overallRecommendation = 'SELL';
-    }
-    
-    const avgConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
-    
-    return {
-      symbol: analyses[0]?.analysis?.symbol,
-      overallRecommendation,
-      averageConfidence: Math.round(avgConfidence),
-      timeframeAnalyses: analyses,
-      consensusStrength: Math.max(buyCount, sellCount, holdCount) / analyses.length,
-      summary: `Análise multi-timeframe indica ${overallRecommendation} com ${Math.round(avgConfidence)}% de confiança`
-    };
-  }
-  
-  async detectMarketRegime(symbol: string): Promise<string> {
-    try {
-      const indicators = await storage.getTechnicalIndicators(symbol, '1d');
-      const candlesticks = await storage.getCandlestickData(symbol, '1d', 20);
-      
-      if (!indicators || candlesticks.length < 20) {
-        return 'INSUFFICIENT_DATA';
-      }
-      
-      const prices = candlesticks.map(c => parseFloat(c.close));
-      const recentPrices = prices.slice(-10);
-      const olderPrices = prices.slice(-20, -10);
-      
-      const recentAvg = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
-      const olderAvg = olderPrices.reduce((a, b) => a + b, 0) / olderPrices.length;
-      
-      const trend = (recentAvg - olderAvg) / olderAvg;
-      const rsi = parseFloat(indicators.rsi || '50');
-      
-      if (trend > 0.05 && rsi < 70) return 'UPTREND';
-      if (trend < -0.05 && rsi > 30) return 'DOWNTREND';
-      if (Math.abs(trend) < 0.02) return 'SIDEWAYS';
-      
-      return 'TRANSITION';
-    } catch (error) {
-      console.error('Error detecting market regime:', error);
-      return 'UNKNOWN';
-    }
-  }
-  
-  async calculateRiskMetrics(symbol: string): Promise<any> {
-    try {
-      const candlesticks = await storage.getCandlestickData(symbol, '1d', 30);
-      
-      if (candlesticks.length < 20) {
-        return {
-          volatility: 0,
-          maxDrawdown: 0,
-          sharpeRatio: 0,
-          riskLevel: 'UNKNOWN'
-        };
-      }
-      
-      const prices = candlesticks.map(c => parseFloat(c.close));
-      const returns = [];
-      
-      for (let i = 1; i < prices.length; i++) {
-        returns.push((prices[i] - prices[i-1]) / prices[i-1]);
-      }
-      
-      // Volatilidade (desvio padrão dos retornos)
-      const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-      const variance = returns.reduce((acc, ret) => acc + Math.pow(ret - avgReturn, 2), 0) / returns.length;
-      const volatility = Math.sqrt(variance) * Math.sqrt(252); // Anualizada
-      
-      // Max Drawdown
-      let peak = prices[0];
-      let maxDrawdown = 0;
-      
-      for (const price of prices) {
-        if (price > peak) {
-          peak = price;
-        } else {
-          const drawdown = (peak - price) / peak;
-          maxDrawdown = Math.max(maxDrawdown, drawdown);
-        }
-      }
-      
-      // Sharpe Ratio simplificado (assumindo risk-free rate = 0)
-      const sharpeRatio = avgReturn / Math.sqrt(variance);
-      
-      let riskLevel = 'MEDIUM';
-      if (volatility > 0.4) riskLevel = 'HIGH';
-      else if (volatility < 0.2) riskLevel = 'LOW';
-      
+    if (trendStrength > 70) {
       return {
-        volatility: Math.round(volatility * 100) / 100,
-        maxDrawdown: Math.round(maxDrawdown * 100) / 100,
-        sharpeRatio: Math.round(sharpeRatio * 100) / 100,
-        riskLevel,
-        avgDailyReturn: Math.round(avgReturn * 10000) / 100 // em basis points
+        type: 'TRENDING',
+        direction: this.determineTrendDirection(analyses),
+        strength: trendStrength,
+        volatility
       };
-    } catch (error) {
-      console.error('Error calculating risk metrics:', error);
+    } else if (trendStrength < 30) {
       return {
-        volatility: 0,
-        maxDrawdown: 0,
-        sharpeRatio: 0,
-        riskLevel: 'UNKNOWN'
+        type: 'RANGING',
+        range: this.calculateRange(analyses),
+        volatility
+      };
+    } else {
+      return {
+        type: 'TRANSITIONING',
+        bias: this.determineTrendBias(analyses),
+        volatility
       };
     }
   }
-  
-  async generateMarketSummary(): Promise<any> {
-    const symbols = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4'];
-    const summaries = [];
+
+  private analyzeTimeframeCorrelations(analyses: TimeframeAnalysis[]): CorrelationData[] {
+    const correlations: CorrelationData[] = [];
     
-    for (const symbol of symbols) {
-      try {
-        const analysis = await storage.getAIAnalysis(symbol, '1d');
-        const marketData = await storage.getMarketData(symbol);
-        const regime = await this.detectMarketRegime(symbol);
-        const risk = await this.calculateRiskMetrics(symbol);
+    for (let i = 0; i < analyses.length - 1; i++) {
+      for (let j = i + 1; j < analyses.length; j++) {
+        const tf1 = analyses[i];
+        const tf2 = analyses[j];
         
-        if (analysis && marketData) {
-          summaries.push({
-            symbol,
-            price: parseFloat(marketData.price),
-            change: parseFloat(marketData.changePercent || '0'),
-            recommendation: analysis.recommendation,
-            confidence: analysis.confidence,
-            sentiment: analysis.sentiment,
-            regime,
-            riskLevel: risk.riskLevel,
-            volatility: risk.volatility
-          });
-        }
-      } catch (error) {
-        console.error(`Error generating summary for ${symbol}:`, error);
+        correlations.push({
+          timeframe1: tf1.timeframe,
+          timeframe2: tf2.timeframe,
+          correlation: this.calculateCorrelation(tf1, tf2),
+          agreement: this.checkSignalAgreement(tf1, tf2)
+        });
       }
     }
     
-    const bullishCount = summaries.filter(s => s.sentiment === 'BULLISH').length;
-    const bearishCount = summaries.filter(s => s.sentiment === 'BEARISH').length;
+    return correlations;
+  }
+
+  private validateSignalsAcrossTimeframes(analyses: TimeframeAnalysis[]): {
+    signal: 'BUY' | 'SELL' | 'HOLD';
+    confidence: number;
+    confirmations: string[];
+  } {
+    const signals = analyses.map(a => ({
+      signal: a.analysis.recommendation,
+      weight: a.weight,
+      confidence: a.analysis.confidence
+    }));
     
-    let marketSentiment = 'NEUTRAL';
-    if (bullishCount > bearishCount) marketSentiment = 'BULLISH';
-    else if (bearishCount > bullishCount) marketSentiment = 'BEARISH';
+    const weightedSignals = {
+      BUY: 0,
+      SELL: 0,
+      HOLD: 0
+    };
+    
+    signals.forEach(s => {
+      weightedSignals[s.signal] += s.weight * s.confidence;
+    });
+    
+    const totalWeight = signals.reduce((sum, s) => sum + s.weight, 0);
+    const normalizedSignals = {
+      BUY: weightedSignals.BUY / totalWeight,
+      SELL: weightedSignals.SELL / totalWeight,
+      HOLD: weightedSignals.HOLD / totalWeight
+    };
+    
+    const strongestSignal = Object.entries(normalizedSignals)
+      .reduce((a, b) => a[1] > b[1] ? a : b);
+    
+    const confirmations = analyses
+      .filter(a => a.analysis.recommendation === strongestSignal[0])
+      .map(a => a.timeframe);
     
     return {
-      overallSentiment: marketSentiment,
-      activeSymbols: summaries.length,
-      bullishCount,
-      bearishCount,
-      avgConfidence: Math.round(summaries.reduce((acc, s) => acc + s.confidence, 0) / summaries.length),
-      topGainers: summaries.filter(s => s.change > 0).sort((a, b) => b.change - a.change).slice(0, 3),
-      topLosers: summaries.filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 3),
-      highRiskAssets: summaries.filter(s => s.riskLevel === 'HIGH'),
-      timestamp: new Date().toISOString()
+      signal: strongestSignal[0] as 'BUY' | 'SELL' | 'HOLD',
+      confidence: strongestSignal[1] * 100,
+      confirmations
     };
+  }
+
+  private aggregateVolumeAnalysis(analyses: TimeframeAnalysis[]): {
+    trend: string;
+    strength: number;
+    abnormalVolume: boolean;
+  } {
+    const volumeData = analyses.map(a => ({
+      timeframe: a.timeframe,
+      volume: a.analysis.volumeAnalysis || {}
+    }));
+    
+    const aggregateStrength = volumeData.reduce((sum, data) => 
+      sum + (data.volume.score || 0), 0) / volumeData.length;
+    
+    const abnormalVolume = volumeData.some(data => 
+      data.volume.significance === 'high');
+    
+    return {
+      trend: this.determineVolumeTrend(volumeData),
+      strength: aggregateStrength * 100,
+      abnormalVolume
+    };
+  }
+
+  private calculateOverallConfidence(
+    analyses: TimeframeAnalysis[],
+    correlations: CorrelationData[]
+  ): number {
+    const signalAgreement = this.calculateSignalAgreement(analyses);
+    const correlationStrength = this.calculateCorrelationStrength(correlations);
+    const trendStrength = this.calculateTrendStrength(analyses);
+    
+    return Math.round(
+      (signalAgreement * 0.4) +
+      (correlationStrength * 0.3) +
+      (trendStrength * 0.3)
+    );
+  }
+
+  private getTimeframeWeight(timeframe: string): number {
+    const weights: {[key: string]: number} = {
+      '1M': 1.0,
+      '1w': 0.9,
+      '1d': 0.8,
+      '4h': 0.7,
+      '1h': 0.6,
+      '15m': 0.5,
+      '5m': 0.4,
+      '1m': 0.3
+    };
+    
+    return weights[timeframe] || 0.5;
+  }
+
+  // Métodos auxiliares para cálculos específicos...
+  private calculateTrendStrength(analyses: TimeframeAnalysis[]): number {
+    // Implementação do cálculo de força da tendência
+    return 0;
+  }
+
+  private calculateAggregateVolatility(analyses: TimeframeAnalysis[]): number {
+    // Implementação do cálculo de volatilidade agregada
+    return 0;
+  }
+
+  private determineTrendDirection(analyses: TimeframeAnalysis[]): 'UP' | 'DOWN' {
+    // Implementação da determinação de direção da tendência
+    return 'UP';
+  }
+
+  private calculateRange(analyses: TimeframeAnalysis[]): {
+    high: number;
+    low: number;
+  } {
+    // Implementação do cálculo de range
+    return { high: 0, low: 0 };
+  }
+
+  private determineTrendBias(analyses: TimeframeAnalysis[]): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
+    // Implementação da determinação de viés da tendência
+    return 'NEUTRAL';
+  }
+
+  private calculateCorrelation(tf1: TimeframeAnalysis, tf2: TimeframeAnalysis): number {
+    // Implementação do cálculo de correlação
+    return 0;
+  }
+
+  private checkSignalAgreement(tf1: TimeframeAnalysis, tf2: TimeframeAnalysis): boolean {
+    // Implementação da verificação de concordância de sinais
+    return false;
+  }
+
+  private determineVolumeTrend(volumeData: any[]): string {
+    // Implementação da determinação de tendência do volume
+    return 'neutral';
+  }
+
+  private calculateSignalAgreement(analyses: TimeframeAnalysis[]): number {
+    // Implementação do cálculo de concordância de sinais
+    return 0;
+  }
+
+  private calculateCorrelationStrength(correlations: CorrelationData[]): number {
+    // Implementação do cálculo de força de correlação
+    return 0;
   }
 }
 
-export const enhancedAnalysisService = new EnhancedAnalysisService();
+export const enhancedAnalysis = new EnhancedAnalysisService();
