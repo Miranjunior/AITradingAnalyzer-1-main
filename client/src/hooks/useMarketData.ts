@@ -1,70 +1,31 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MarketData, TechnicalIndicators, CandlestickData, Timeframe } from "@/types/trading";
+import { useQuery } from '@tanstack/react-query';
+import { MarketData } from '../types/trading';
 
-export function useMarketData(symbol: string) {
+export function useMarketData(symbol: string | undefined) {
   return useQuery<MarketData>({
-    queryKey: ['/api/market-data', symbol],
-    enabled: !!symbol,
-    refetchInterval: 30000, // Refetch every 30 seconds
-    staleTime: 25000, // Consider data stale after 25 seconds
-  });
-}
-
-export function useAllMarketData() {
-  return useQuery<MarketData[]>({
-    queryKey: ['/api/market-data'],
-    refetchInterval: 30000,
-    staleTime: 25000,
-  });
-}
-
-export function useTechnicalIndicators(symbol: string, timeframe: Timeframe) {
-  return useQuery<TechnicalIndicators>({
-    queryKey: ['/api/indicators', symbol, timeframe],
-    enabled: !!symbol && !!timeframe,
-    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-    staleTime: 4 * 60 * 1000, // Consider data stale after 4 minutes
-  });
-}
-
-export function useCandlestickData(symbol: string, timeframe: Timeframe, limit = 100) {
-  return useQuery<CandlestickData[]>({
-    queryKey: ['/api/candlesticks', symbol, timeframe, limit],
-    enabled: !!symbol && !!timeframe,
-    refetchInterval: 60000, // Refetch every minute
-    staleTime: 50000, // Consider data stale after 50 seconds
-  });
-}
-
-export function useRefreshData() {
-  const queryClient = useQueryClient();
-
-  const refreshSymbol = async (symbol: string, timeframe: Timeframe = '1d') => {
-    try {
-      const response = await fetch(`/api/refresh/${symbol}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ timeframe }),
-      });
-
+    queryKey: ['marketData', symbol],
+    queryFn: async () => {
+      if (!symbol) throw new Error('Symbol is required');
+      
+      const response = await fetch(`/api/market-data?symbol=${symbol}`);
       if (!response.ok) {
-        throw new Error('Failed to refresh data');
+        throw new Error('Failed to fetch market data');
       }
-
-      // Invalidate related queries
-      await queryClient.invalidateQueries({ queryKey: ['/api/market-data', symbol] });
-      await queryClient.invalidateQueries({ queryKey: ['/api/indicators', symbol] });
-      await queryClient.invalidateQueries({ queryKey: ['/api/analysis', symbol] });
-      await queryClient.invalidateQueries({ queryKey: ['/api/candlesticks', symbol] });
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error refreshing data:', error);
-      throw error;
-    }
-  };
-
-  return { refreshSymbol };
+      
+      return response.json();
+    },
+    enabled: !!symbol,
+    refetchInterval: 5000, // Atualiza a cada 5 segundos
+    staleTime: 2000, // Considera dados frescos por 2 segundos
+    retry: 3,
+    select: (data) => ({
+      ...data,
+      price: Number(data.price),
+      volume: data.volume ? Number(data.volume) : 0,
+      high: Number(data.high),
+      low: Number(data.low),
+      open: Number(data.open),
+      previousClose: Number(data.previousClose)
+    })
+  });
 }
