@@ -1,207 +1,179 @@
-import OpenAI from "openai";
-import { storage } from "../storage";
-import { InsertAIAnalysis, MarketData, TechnicalIndicators, CandlestickData } from "../../shared/schema";
+import { OpenAI } from '@openai/api';
+import { WebSocket } from 'ws';
+import { 
+  AIAnalysisInput, 
+  InsertAIAnalysis, 
+  PatternDetection,
+  CandlestickData,
+  TechnicalIndicators,
+  Divergence,
+  MarketData 
+} from '../../shared/types/trading';
+import { storage } from '../storage';
+import { calculateIndicators } from './indicators';
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key"
-});
+const openai = new OpenAI();
 
-interface PatternDetection {
-  name: string;
-  confidence: number;
-  description: string;
-  bullish: boolean;
-}
-
-interface AIAnalysisInput {
-  symbol: string;
-  marketData: MarketData;
-  indicators: TechnicalIndicators;
-  candlesticks: CandlestickData[];
-  timeframe: string;
-}
-
-class AIAnalysisService {
+export class AIAnalysisService {
+  // Método principal de análise
   async generateAnalysis(input: AIAnalysisInput): Promise<InsertAIAnalysis> {
     try {
       const { symbol, marketData, indicators, candlesticks, timeframe } = input;
       
-      // Detect patterns first
-      const patterns = this.detectCandlestickPatterns(candlesticks);
+      // Detecção de padrões avançada
+      const patterns = await this.detectAllPatterns(candlesticks);
       
-      // Prepare context for AI
-      const analysisContext = this.prepareAnalysisContext(input, patterns);
+      // Análise de divergências
+      const divergences = this.detectDivergences(
+        candlesticks.map(c => parseFloat(c.close)),
+        indicators
+      );
       
-      // Get AI analysis
+      // Análise de volume
+      const volumeAnalysis = this.analyzeVolume(candlesticks);
+      
+      // Análise de volatilidade
+      const volatility = this.calculateVolatility(candlesticks);
+      
+      // Detecção de suporte/resistência
+      const levels = this.findKeyLevels(candlesticks);
+      
+      // Preparar contexto enriquecido para IA
+      const analysisContext = this.prepareEnhancedContext({
+        ...input,
+        patterns,
+        divergences,
+        volumeAnalysis,
+        volatility,
+        levels
+      });
+      
+      // Obter análise da IA
       const aiResponse = await this.callAIAnalysis(analysisContext);
       
-      // Parse and validate AI response
+      // Processar e validar resposta
       const parsedAnalysis = this.parseAIResponse(aiResponse);
       
-      // Create analysis record
+      // Calcular score de confiança
+      const confidence = this.calculateConfidenceScore(patterns, indicators, volumeAnalysis);
+      
+      // Calcular níveis de stop loss dinâmico baseado em ATR
+      const { stopLoss, takeProfit } = this.calculateRiskLevels(candlesticks, parsedAnalysis.recommendation);
+      
+      // Criar registro de análise
       const analysis: InsertAIAnalysis = {
         symbol,
         timeframe,
         recommendation: parsedAnalysis.recommendation,
-        confidence: parsedAnalysis.confidence,
+        confidence,
         entryPrice: parsedAnalysis.entryPrice?.toString(),
-        stopLoss: parsedAnalysis.stopLoss?.toString(),
-        takeProfit: parsedAnalysis.takeProfit?.toString(),
+        stopLoss: stopLoss.toString(),
+        takeProfit: takeProfit.toString(),
         summary: parsedAnalysis.summary,
         detailedAnalysis: parsedAnalysis.detailedAnalysis,
-        patterns: patterns,
+        patterns,
+        divergences,
+        volumeAnalysis,
+        levels,
         sentiment: parsedAnalysis.sentiment,
         sentimentStrength: parsedAnalysis.sentimentStrength,
-        riskLevel: parsedAnalysis.riskLevel,
+        riskLevel: this.calculateRiskLevel(volatility, confidence),
+        volatility,
+        timestamp: new Date().toISOString()
       };
 
-      // Store analysis
+      // Armazenar análise
       await storage.createAIAnalysis(analysis);
       
       return analysis;
-    } catch (error) {
-      console.error(`Error generating AI analysis for ${input.symbol}:`, error);
       
-      // Return fallback analysis
+    } catch (error) {
+      console.error(`Erro gerando análise IA para ${input.symbol}:`, error);
       return this.createFallbackAnalysis(input);
     }
   }
 
-  private detectCandlestickPatterns(candlesticks: CandlestickData[]): PatternDetection[] {
-    const patterns: PatternDetection[] = [];
-    
-    if (candlesticks.length < 3) return patterns;
-
-    const recent = candlesticks.slice(-5); // Last 5 candles for pattern analysis
-    
-    // Detect common patterns
-    patterns.push(...this.detectHammerPattern(recent));
-    patterns.push(...this.detectDojiPattern(recent));
-    patterns.push(...this.detectEngulfingPattern(recent));
-    patterns.push(...this.detectSupportResistancePattern(candlesticks));
-    
-    return patterns.filter(p => p.confidence > 60);
-  }
-
-  private detectHammerPattern(candles: CandlestickData[]): PatternDetection[] {
-    const patterns: PatternDetection[] = [];
-    
-    for (let i = 0; i < candles.length; i++) {
-      const candle = candles[i];
-      const open = parseFloat(candle.open);
-      const high = parseFloat(candle.high);
-      const low = parseFloat(candle.low);
-      const close = parseFloat(candle.close);
-      
-      const body = Math.abs(close - open);
-      const upperShadow = high - Math.max(open, close);
-      const lowerShadow = Math.min(open, close) - low;
-      const totalRange = high - low;
-      
-      // Hammer: small body, long lower shadow, short upper shadow
-      if (totalRange > 0 && body < totalRange * 0.3 && lowerShadow > body * 2 && upperShadow < body * 0.5) {
-        const confidence = Math.min(95, 70 + (lowerShadow / body) * 5);
-        patterns.push({
-          name: close > open ? 'Hammer Bullish' : 'Hammer Bearish',
-          confidence: Math.round(confidence),
-          description: 'Strong reversal pattern detected',
-          bullish: close > open
-        });
-      }
-    }
-    
-    return patterns;
-  }
-
-  private detectDojiPattern(candles: CandlestickData[]): PatternDetection[] {
-    const patterns: PatternDetection[] = [];
-    
-    for (let i = 0; i < candles.length; i++) {
-      const candle = candles[i];
-      const open = parseFloat(candle.open);
-      const high = parseFloat(candle.high);
-      const low = parseFloat(candle.low);
-      const close = parseFloat(candle.close);
-      
-      const body = Math.abs(close - open);
-      const totalRange = high - low;
-      
-      // Doji: very small body relative to range
-      if (totalRange > 0 && body < totalRange * 0.1) {
-        patterns.push({
-          name: 'Doji',
-          confidence: 75,
-          description: 'Market indecision pattern',
-          bullish: false // Neutral pattern
-        });
-      }
-    }
-    
-    return patterns;
-  }
-
-  private detectEngulfingPattern(candles: CandlestickData[]): PatternDetection[] {
-    const patterns: PatternDetection[] = [];
-    
-    for (let i = 1; i < candles.length; i++) {
-      const prev = candles[i - 1];
-      const curr = candles[i];
-      
-      const prevOpen = parseFloat(prev.open);
-      const prevClose = parseFloat(prev.close);
-      const currOpen = parseFloat(curr.open);
-      const currClose = parseFloat(curr.close);
-      
-      const prevBody = Math.abs(prevClose - prevOpen);
-      const currBody = Math.abs(currClose - currOpen);
-      
-      // Bullish engulfing: prev red, curr green and engulfs prev
-      if (prevClose < prevOpen && currClose > currOpen && 
-          currOpen <= prevClose && currClose >= prevOpen && currBody > prevBody) {
-        patterns.push({
-          name: 'Bullish Engulfing',
-          confidence: 85,
-          description: 'Strong bullish reversal pattern',
-          bullish: true
-        });
-      }
-      
-      // Bearish engulfing: prev green, curr red and engulfs prev
-      if (prevClose > prevOpen && currClose < currOpen && 
-          currOpen >= prevClose && currClose <= prevOpen && currBody > prevBody) {
-        patterns.push({
-          name: 'Bearish Engulfing',
-          confidence: 85,
-          description: 'Strong bearish reversal pattern',
-          bullish: false
-        });
-      }
-    }
-    
-    return patterns;
-  }
-
-  private detectSupportResistancePattern(candlesticks: CandlestickData[]): PatternDetection[] {
+  // Detecção de todos os padrões
+  private async detectAllPatterns(candlesticks: CandlestickData[]): Promise<PatternDetection[]> {
     const patterns: PatternDetection[] = [];
     
     if (candlesticks.length < 10) return patterns;
+
+    // Padrões básicos
+    patterns.push(...this.detectCandlestickPatterns(candlesticks));
     
-    const prices = candlesticks.map(c => parseFloat(c.close));
+    // Padrões avançados
+    patterns.push(...this.detectAdvancedPatterns(candlesticks));
+    
+    // Fibonacci
+    patterns.push(...this.detectFibonacciPatterns(candlesticks));
+    
+    // Filtrar por confiança e ordenar
+    return patterns
+      .filter(p => p.confidence > 60)
+      .sort((a, b) => b.confidence - a.confidence);
+  }
+
+  // Detecção de padrões de candlestick básicos melhorada
+  private detectCandlestickPatterns(candles: CandlestickData[]): PatternDetection[] {
+    const patterns: PatternDetection[] = [];
+    
+    for (let i = 0; i < candles.length - 2; i++) {
+      const c1 = candles[i];
+      const c2 = candles[i + 1];
+      const c3 = candles[i + 2];
+      
+      // Padrão Hammer/Shooting Star
+      this.detectSingleCandlePatterns(c2, patterns);
+      
+      // Padrões de duas velas
+      this.detectTwoCandlePatterns(c1, c2, patterns);
+      
+      // Padrões de três velas
+      this.detectThreeCandlePatterns(c1, c2, c3, patterns);
+    }
+    
+    return patterns;
+  }
+
+  // Detecção de padrões avançados
+  private detectAdvancedPatterns(candles: CandlestickData[]): PatternDetection[] {
+    const patterns: PatternDetection[] = [];
+    
+    // Head and Shoulders
+    this.detectHeadAndShoulders(candles, patterns);
+    
+    // Double Top/Bottom
+    this.detectDoublePatterns(candles, patterns);
+    
+    // Triangles
+    this.detectTrianglePatterns(candles, patterns);
+    
+    return patterns;
+  }
+
+  // Detecção de padrões Fibonacci
+  private detectFibonacciPatterns(candles: CandlestickData[]): PatternDetection[] {
+    const patterns: PatternDetection[] = [];
+    const prices = candles.map(c => parseFloat(c.close));
+    
+    const highPrice = Math.max(...prices);
+    const lowPrice = Math.min(...prices);
+    const range = highPrice - lowPrice;
+    
+    const fibLevels = [0.236, 0.382, 0.5, 0.618, 0.786];
     const currentPrice = prices[prices.length - 1];
     
-    // Find potential support/resistance levels
-    const levels = this.findKeyLevels(prices);
-    
-    levels.forEach(level => {
-      const distance = Math.abs(currentPrice - level.price) / currentPrice;
+    fibLevels.forEach(level => {
+      const fibPrice = highPrice - (range * level);
+      const distance = Math.abs(currentPrice - fibPrice) / currentPrice;
       
-      if (distance < 0.02) { // Within 2% of key level
+      if (distance < 0.01) {
         patterns.push({
-          name: level.type === 'support' ? 'Near Support' : 'Near Resistance',
-          confidence: Math.round(level.strength * 100),
-          description: `Price approaching ${level.type} at ${level.price.toFixed(2)}`,
-          bullish: level.type === 'support'
+          name: `Fibonacci ${level * 100}%`,
+          confidence: 80,
+          description: `Preço próximo ao nível de Fibonacci ${level * 100}%`,
+          bullish: currentPrice > fibPrice
         });
       }
     });
@@ -209,111 +181,142 @@ class AIAnalysisService {
     return patterns;
   }
 
-  private findKeyLevels(prices: number[]): Array<{ price: number; type: 'support' | 'resistance'; strength: number }> {
-    const levels: Array<{ price: number; type: 'support' | 'resistance'; strength: number }> = [];
+  // Detecção de divergências
+  private detectDivergences(prices: number[], indicators: TechnicalIndicators): Divergence[] {
+    const divergences: Divergence[] = [];
     
-    // Simple pivot point detection
-    for (let i = 2; i < prices.length - 2; i++) {
-      const current = prices[i];
-      const left2 = prices[i - 2];
-      const left1 = prices[i - 1];
-      const right1 = prices[i + 1];
-      const right2 = prices[i + 2];
-      
-      // Resistance (local high)
-      if (current > left2 && current > left1 && current > right1 && current > right2) {
-        levels.push({
-          price: current,
-          type: 'resistance',
-          strength: 0.7
-        });
-      }
-      
-      // Support (local low)
-      if (current < left2 && current < left1 && current < right1 && current < right2) {
-        levels.push({
-          price: current,
-          type: 'support',
-          strength: 0.7
-        });
-      }
+    // RSI Divergências
+    if (indicators.rsi) {
+      this.detectIndicatorDivergence(
+        prices,
+        indicators.rsi.split(',').map(Number),
+        'RSI',
+        divergences
+      );
     }
     
-    return levels;
+    // MACD Divergências
+    if (indicators.macd && indicators.macdSignal) {
+      const macdValues = indicators.macd.split(',').map(Number);
+      const signalValues = indicators.macdSignal.split(',').map(Number);
+      
+      this.detectIndicatorDivergence(
+        prices,
+        macdValues,
+        'MACD',
+        divergences
+      );
+    }
+    
+    return divergences;
   }
 
-  private prepareAnalysisContext(input: AIAnalysisInput, patterns: PatternDetection[]): string {
-    const { symbol, marketData, indicators, candlesticks, timeframe } = input;
+  // Cálculo de volatilidade e ATR
+  private calculateVolatility(candles: CandlestickData[]): number {
+    const atr = this.calculateATR(candles, 14);
+    const averagePrice = candles.reduce((sum, c) => 
+      sum + parseFloat(c.close), 0) / candles.length;
     
-    const recentCandles = candlesticks.slice(-5);
-    const priceChange = marketData.changePercent ? parseFloat(marketData.changePercent) : 0;
-    
-    return `
-Você é um trader profissional com 20 anos de experiência e histórico de sucesso no mercado financeiro. 
-Analise os seguintes dados técnicos com a expertise de um analista sênior:
-
-DADOS DO ATIVO: ${symbol}
-- Preço atual: ${marketData.price}
-- Variação 24h: ${priceChange.toFixed(2)}%
-- Volume: ${marketData.volume || 'N/A'}
-- Máxima: ${marketData.high}
-- Mínima: ${marketData.low}
-- Timeframe: ${timeframe}
-
-INDICADORES TÉCNICOS:
-- RSI(14): ${indicators.rsi || 'N/A'}
-- MACD: ${indicators.macd || 'N/A'}
-- MACD Signal: ${indicators.macdSignal || 'N/A'}
-- MA(20): ${indicators.ma20 || 'N/A'}
-- MA(50): ${indicators.ma50 || 'N/A'}
-- Bollinger Superior: ${indicators.bollingerUpper || 'N/A'}
-- Bollinger Inferior: ${indicators.bollingerLower || 'N/A'}
-- Estocástico: ${indicators.stochastic || 'N/A'}
-- Williams %R: ${indicators.williamsR || 'N/A'}
-- ADX: ${indicators.adx || 'N/A'}
-
-PADRÕES IDENTIFICADOS:
-${patterns.map(p => `- ${p.name}: ${p.confidence}% (${p.description})`).join('\n')}
-
-DADOS RECENTES DE CANDLESTICK:
-${recentCandles.map((c, i) => 
-  `Candle ${i + 1}: O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume || 'N/A'}`
-).join('\n')}
-
-Forneça uma análise completa em formato JSON incluindo:
-{
-  "recommendation": "BUY|SELL|HOLD",
-  "confidence": 0-100,
-  "entryPrice": number,
-  "stopLoss": number,
-  "takeProfit": number,
-  "summary": "string (resumo em português, máximo 150 caracteres)",
-  "detailedAnalysis": "string (análise detalhada em português)",
-  "sentiment": "BULLISH|BEARISH|NEUTRAL",
-  "sentimentStrength": 0-100,
-  "riskLevel": "LOW|MEDIUM|HIGH",
-  "reasoning": "string (justificativa técnica detalhada)"
-}
-
-Analise como um trader experiente, considerando:
-1. Força da tendência atual
-2. Níveis de suporte e resistência
-3. Padrões de candlestick identificados
-4. Divergências entre indicadores
-5. Volume e momentum
-6. Condições de sobrecompra/sobrevenda
-7. Contexto de mercado atual
-
-Seja preciso e objetivo na análise.`;
+    return (atr / averagePrice) * 100;
   }
 
+  private calculateATR(candles: CandlestickData[], period: number): number {
+    const trValues: number[] = [];
+    
+    for (let i = 1; i < candles.length; i++) {
+      const high = parseFloat(candles[i].high);
+      const low = parseFloat(candles[i].low);
+      const prevClose = parseFloat(candles[i-1].close);
+      
+      const tr = Math.max(
+        high - low,
+        Math.abs(high - prevClose),
+        Math.abs(low - prevClose)
+      );
+      
+      trValues.push(tr);
+    }
+    
+    // Calcular ATR como média móvel dos TR
+    return trValues
+      .slice(-period)
+      .reduce((sum, tr) => sum + tr, 0) / period;
+  }
+
+  // Cálculo de níveis de risco dinâmicos
+  private calculateRiskLevels(candles: CandlestickData[], recommendation: string): {
+    stopLoss: number;
+    takeProfit: number;
+  } {
+    const atr = this.calculateATR(candles, 14);
+    const currentPrice = parseFloat(candles[candles.length - 1].close);
+    
+    const multiplier = recommendation === 'BUY' ? 1 : -1;
+    
+    return {
+      stopLoss: currentPrice - (multiplier * atr * 2),
+      takeProfit: currentPrice + (multiplier * atr * 3)
+    };
+  }
+
+  // Score de confiança melhorado
+  private calculateConfidenceScore(
+    patterns: PatternDetection[],
+    indicators: TechnicalIndicators,
+    volumeAnalysis: any
+  ): number {
+    let score = 0;
+    let totalWeight = 0;
+    
+    // Peso dos padrões
+    const patternScore = patterns.reduce((sum, p) => sum + p.confidence, 0) / patterns.length;
+    score += patternScore * 0.4;
+    totalWeight += 0.4;
+    
+    // Peso dos indicadores
+    const indicatorScore = this.calculateIndicatorAgreement(indicators);
+    score += indicatorScore * 0.3;
+    totalWeight += 0.3;
+    
+    // Peso do volume
+    if (volumeAnalysis) {
+      score += volumeAnalysis.score * 0.3;
+      totalWeight += 0.3;
+    }
+    
+    return Math.round((score / totalWeight) * 100);
+  }
+
+  // Análise de Volume
+  private analyzeVolume(candles: CandlestickData[]): {
+    trend: 'increasing' | 'decreasing' | 'neutral';
+    score: number;
+    significance: 'high' | 'medium' | 'low';
+  } {
+    const volumes = candles.map(c => parseFloat(c.volume || '0'));
+    const avgVolume = volumes.reduce((sum, v) => sum + v, 0) / volumes.length;
+    const recentVolume = volumes.slice(-5);
+    const recentAvg = recentVolume.reduce((sum, v) => sum + v, 0) / 5;
+    
+    const trend = recentAvg > avgVolume ? 'increasing' : 
+                 recentAvg < avgVolume ? 'decreasing' : 'neutral';
+                 
+    const significance = recentAvg > avgVolume * 1.5 ? 'high' :
+                        recentAvg > avgVolume * 1.2 ? 'medium' : 'low';
+                        
+    const score = (recentAvg / avgVolume) * 0.7 + 0.3;
+    
+    return { trend, score, significance };
+  }
+
+  // Chamada à API OpenAI otimizada
   private async callAIAnalysis(context: string): Promise<string> {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "Você é um analista técnico especialista em mercados financeiros. Analise os dados fornecidos e retorne uma análise técnica completa em formato JSON válido."
+          content: "Você é um analista técnico especialista com foco em análise quantitativa e qualitativa de mercados financeiros."
         },
         {
           role: "user",
@@ -322,102 +325,30 @@ Seja preciso e objetivo na análise.`;
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-      max_tokens: 1500
+      max_tokens: 2000
     });
 
     return response.choices[0].message.content || "{}";
   }
 
-  private parseAIResponse(response: string): any {
-    try {
-      const parsed = JSON.parse(response);
-      
-      // Validate and sanitize response
-      return {
-        recommendation: this.validateRecommendation(parsed.recommendation),
-        confidence: this.validateConfidence(parsed.confidence),
-        entryPrice: this.validatePrice(parsed.entryPrice),
-        stopLoss: this.validatePrice(parsed.stopLoss),
-        takeProfit: this.validatePrice(parsed.takeProfit),
-        summary: this.validateString(parsed.summary, 150),
-        detailedAnalysis: this.validateString(parsed.detailedAnalysis, 2000),
-        sentiment: this.validateSentiment(parsed.sentiment),
-        sentimentStrength: this.validateConfidence(parsed.sentimentStrength),
-        riskLevel: this.validateRiskLevel(parsed.riskLevel),
-      };
-    } catch (error) {
-      console.error('Error parsing AI response:', error);
-      throw new Error('Invalid AI response format');
-    }
-  }
-
-  private validateRecommendation(value: any): 'BUY' | 'SELL' | 'HOLD' {
-    if (['BUY', 'SELL', 'HOLD'].includes(value)) return value;
-    return 'HOLD';
-  }
-
-  private validateConfidence(value: any): number {
-    const num = parseInt(value);
-    if (isNaN(num)) return 50;
-    return Math.max(0, Math.min(100, num));
-  }
-
-  private validatePrice(value: any): number | null {
-    const num = parseFloat(value);
-    return isNaN(num) ? null : num;
-  }
-
-  private validateString(value: any, maxLength: number): string {
-    if (typeof value !== 'string') return '';
-    return value.substring(0, maxLength);
-  }
-
-  private validateSentiment(value: any): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
-    if (['BULLISH', 'BEARISH', 'NEUTRAL'].includes(value)) return value;
-    return 'NEUTRAL';
-  }
-
-  private validateRiskLevel(value: any): 'LOW' | 'MEDIUM' | 'HIGH' {
-    if (['LOW', 'MEDIUM', 'HIGH'].includes(value)) return value;
-    return 'MEDIUM';
-  }
-
+  // Análise de fallback melhorada
   private createFallbackAnalysis(input: AIAnalysisInput): InsertAIAnalysis {
+    const { symbol, timeframe } = input;
+    
     return {
-      symbol: input.symbol,
-      timeframe: input.timeframe,
+      symbol,
+      timeframe,
       recommendation: 'HOLD',
       confidence: 50,
-      summary: 'Análise indisponível no momento. Dados insuficientes para recomendação.',
-      detailedAnalysis: 'Não foi possível gerar análise detalhada devido a limitações técnicas.',
-      patterns: [],
+      summary: 'Análise indisponível no momento',
+      detailedAnalysis: 'Sistema em modo de fallback devido a erro na análise primária',
       sentiment: 'NEUTRAL',
       sentimentStrength: 50,
       riskLevel: 'MEDIUM',
+      patterns: [],
+      timestamp: new Date().toISOString()
     };
-  }
-
-  async analyzeMultipleAssets(symbols: string[], timeframe: string = '1d'): Promise<void> {
-    for (const symbol of symbols) {
-      try {
-        const marketData = await storage.getMarketData(symbol);
-        const indicators = await storage.getTechnicalIndicators(symbol, timeframe);
-        const candlesticks = await storage.getCandlestickData(symbol, timeframe, 50);
-
-        if (marketData && indicators && candlesticks.length > 0) {
-          await this.generateAnalysis({
-            symbol,
-            marketData,
-            indicators,
-            candlesticks,
-            timeframe
-          });
-        }
-      } catch (error) {
-        console.error(`Error analyzing ${symbol}:`, error);
-      }
-    }
   }
 }
 
-export const aiAnalysisService = new AIAnalysisService();
+export const aiAnalysis = new AIAnalysisService();
