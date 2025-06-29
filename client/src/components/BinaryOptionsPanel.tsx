@@ -5,17 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
-
-interface BinarySignal {
-  id: number;
-  symbol: string;
-  direction: 'call' | 'put';
-  confidence: number;
-  timeframe: string;
-  reasoning: string;
-  expiresAt: string;
-  createdAt: string;
-}
+import type { BinarySignal } from '@/types/trading';
 
 interface BinaryOptionsPanelProps {
   selectedSymbol?: string;
@@ -25,12 +15,12 @@ const BinaryOptionsPanel: React.FC<BinaryOptionsPanelProps> = ({ selectedSymbol 
   const [selectedTimeframe, setSelectedTimeframe] = useState('5m');
   const [investment, setInvestment] = useState(100);
 
-  const { data: binarySignals = [], isLoading } = useQuery({
+  const { data: binarySignals = [], isLoading } = useQuery<BinarySignal[]>({
     queryKey: ['/api/binary-signals'],
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  const { data: forexSignals = [] } = useQuery({
+  const { data: forexSignals = [] } = useQuery<BinarySignal[]>({
     queryKey: ['/api/forex-signals'],
     refetchInterval: 60000, // Refresh every minute
   });
@@ -65,14 +55,11 @@ const BinaryOptionsPanel: React.FC<BinaryOptionsPanelProps> = ({ selectedSymbol 
 
   const handleTrade = async (signal: BinarySignal, prediction: 'higher' | 'lower') => {
     try {
-      const response = await apiRequest('/api/binary-trade', {
-        method: 'POST',
-        body: JSON.stringify({
-          userId: 1, // Mock user ID
-          optionSymbol: signal.symbol,
-          prediction,
-          investment
-        })
+      const response = await apiRequest('POST', '/api/binary-trade', {
+        userId: 1, // Mock user ID
+        optionSymbol: signal.symbol,
+        prediction,
+        investment
       });
 
       if (response.ok) {

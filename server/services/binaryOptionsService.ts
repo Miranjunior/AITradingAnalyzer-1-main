@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { aiAnalysisService } from "./aiAnalysis";
+import { aiAnalysis } from "./aiAnalysis";
 import { 
   InsertBinaryOption, 
   InsertBinarySignal, 
@@ -8,7 +8,63 @@ import {
   PAYOUT_RATES,
   BinaryExpiryTime 
 } from "../../shared/binaryOptions";
-import { MarketData, TechnicalIndicators } from "../../shared/schema";
+import { 
+  CandlestickData, 
+  TechnicalIndicators, 
+  InsertMarketData 
+} from "../../shared/types/trading";
+
+// Importar funções de normalização do enhancedAnalysis ou routes
+function normalizeMarketData(data: any): InsertMarketData | undefined {
+  if (!data) return undefined;
+  return {
+    symbol: data.symbol,
+    price: data.price,
+    previousClose: data.previousClose ?? undefined,
+    change: data.change ?? undefined,
+    changePercent: data.changePercent ?? undefined,
+    volume: typeof data.volume === 'number' ? data.volume : 0,
+    high: data.high ?? undefined,
+    low: data.low ?? undefined,
+    open: data.open ?? undefined,
+    marketCap: data.marketCap ?? undefined,
+    updatedAt: data.updatedAt || data.timestamp || new Date(),
+  };
+}
+function normalizeIndicators(data: any): TechnicalIndicators | undefined {
+  if (!data) return undefined;
+  return {
+    symbol: data.symbol,
+    timeframe: data.timeframe,
+    rsi: data.rsi ?? undefined,
+    macd: data.macd ?? undefined,
+    macdSignal: data.macdSignal ?? undefined,
+    macdHistogram: data.macdHistogram ?? undefined,
+    sma20: data.sma20 ?? undefined,
+    sma50: data.sma50 ?? undefined,
+    ema20: data.ema20 ?? undefined,
+    ema50: data.ema50 ?? undefined,
+    bollingerUpper: data.bollingerUpper ?? undefined,
+    bollingerMiddle: data.bollingerMiddle ?? undefined,
+    bollingerLower: data.bollingerLower ?? undefined,
+    stochastic: data.stochastic ?? undefined,
+    williamsR: data.williamsR ?? undefined,
+    adx: data.adx ?? undefined,
+    updatedAt: data.updatedAt || data.timestamp || new Date(),
+  };
+}
+function normalizeCandlesticks(arr: any[]): CandlestickData[] {
+  return (arr || []).map(c => ({
+    symbol: c.symbol,
+    timeframe: c.timeframe,
+    timestamp: c.timestamp || new Date(),
+    open: c.open ?? '0',
+    high: c.high ?? '0',
+    low: c.low ?? '0',
+    close: c.close ?? '0',
+    volume: typeof c.volume === 'number' ? c.volume : 0,
+  }));
+}
 
 class BinaryOptionsService {
   
@@ -24,11 +80,11 @@ class BinaryOptionsService {
       }
       
       // Generate AI analysis for binary trading
-      const aiAnalysis = await aiAnalysisService.generateAnalysis({
+      const aiAnalysisResult = await aiAnalysis.generateAnalysis({
         symbol,
-        marketData,
-        indicators,
-        candlesticks,
+        marketData: normalizeMarketData(marketData)!,
+        indicators: normalizeIndicators(indicators)!,
+        candlesticks: normalizeCandlesticks(candlesticks),
         timeframe
       });
       
@@ -36,12 +92,13 @@ class BinaryOptionsService {
       let direction: 'call' | 'put' = 'call';
       let confidence = 50;
       
-      if (aiAnalysis.recommendation === 'BUY') {
+      // Converter confidence para number
+      if (aiAnalysisResult.recommendation === 'BUY') {
         direction = 'call';
-        confidence = aiAnalysis.confidence;
-      } else if (aiAnalysis.recommendation === 'SELL') {
+        confidence = parseFloat(aiAnalysisResult.confidence);
+      } else if (aiAnalysisResult.recommendation === 'SELL') {
         direction = 'put';
-        confidence = aiAnalysis.confidence;
+        confidence = parseFloat(aiAnalysisResult.confidence);
       } else {
         // For HOLD, use technical indicators
         const rsi = parseFloat(indicators.rsi || '50');
@@ -63,7 +120,7 @@ class BinaryOptionsService {
         direction,
         confidence: Math.round(confidence),
         timeframe,
-        reasoning: aiAnalysis.reasoning || `${direction.toUpperCase()} signal based on ${aiAnalysis.recommendation} recommendation`,
+        reasoning: aiAnalysisResult.reasoning || `${direction.toUpperCase()} signal based on ${aiAnalysisResult.recommendation} recommendation`,
         accuracy: null,
         isActive: true,
         expiresAt

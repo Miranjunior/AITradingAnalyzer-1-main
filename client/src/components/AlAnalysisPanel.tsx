@@ -103,7 +103,7 @@ function SummaryTab({ analysis }: { analysis: AIAnalysis }) {
         </Badge>
         <div className="text-right">
           <p className="text-sm text-gray-400">Confiança</p>
-          <Progress value={analysis.confidence} className="w-24" />
+          <Progress value={Number(analysis.confidence)} className="w-24" />
         </div>
       </div>
 
@@ -156,7 +156,7 @@ function TechnicalTab({ analysis }: { analysis: AIAnalysis }) {
             `}>
               {analysis.sentiment}
             </Badge>
-            <Progress value={analysis.sentimentStrength} className="w-32" />
+            {/* Removido Progress de sentimentStrength pois não existe no tipo */}
           </div>
         </div>
       </div>
@@ -176,8 +176,8 @@ function PatternsTab({ patterns }: { patterns: PatternDetection[] }) {
             </div>
             <div className="text-right">
               <Progress value={pattern.confidence} className="w-24" />
-              <Badge className={pattern.bullish ? 'bg-green-500' : 'bg-red-500'}>
-                {pattern.bullish ? 'Bullish' : 'Bearish'}
+              <Badge className={pattern.type === 'bullish' ? 'bg-green-500' : pattern.type === 'bearish' ? 'bg-red-500' : 'bg-yellow-500'}>
+                {pattern.type === 'bullish' ? 'Bullish' : pattern.type === 'bearish' ? 'Bearish' : 'Neutral'}
               </Badge>
             </div>
           </div>

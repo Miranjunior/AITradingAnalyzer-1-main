@@ -1,9 +1,3 @@
-// Trading related types and interfaces
-
-export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w' | '1M';
-
-export type ChartType = 'candlestick' | 'line' | 'area';
-
 export interface CandlestickData {
   symbol: string;
   timeframe: string;
@@ -13,20 +7,6 @@ export interface CandlestickData {
   low: string;
   close: string;
   volume: number;
-}
-
-export interface MarketData {
-  symbol: string;
-  price: string;
-  previousClose?: string;
-  change?: string;
-  changePercent?: string;
-  volume?: number;
-  high?: string;
-  low?: string;
-  open?: string;
-  marketCap?: number;
-  updatedAt: Date;
 }
 
 export interface TechnicalIndicators {
@@ -69,7 +49,42 @@ export interface AIAnalysis {
   updatedAt: Date;
 }
 
-export interface Asset {
+export interface PatternDetection {
+  name: string;
+  type: 'bullish' | 'bearish' | 'neutral';
+  confidence: number;
+  description: string;
+}
+
+export interface Alert {
+  id: string;
+  symbol: string;
+  type: AlertType;
+  condition: string;
+  value: number;
+  status: 'ACTIVE' | 'TRIGGERED' | 'EXPIRED';
+  createdAt: Date;
+  triggeredAt?: Date;
+}
+
+export type AlertType = 'PRICE' | 'TECHNICAL' | 'PATTERN';
+
+export interface InsertMarketData {
+  symbol: string;
+  price: string;
+  volume?: number;
+  high?: string;
+  low?: string;
+  open?: string;
+  close?: string;
+  previousClose?: string;
+  change?: string;
+  changePercent?: string;
+  marketCap?: number;
+  updatedAt: Date;
+}
+
+export interface InsertAsset {
   symbol: string;
   name: string;
   type: 'stock' | 'crypto' | 'forex' | 'etf' | 'reit' | 'commodity' | 'binary_option';
@@ -78,41 +93,4 @@ export interface Asset {
   isActive: boolean;
 }
 
-export interface BinarySignal {
-  id: number;
-  symbol: string;
-  direction: 'call' | 'put';
-  confidence: number;
-  timeframe: string;
-  reasoning: string;
-  expiresAt: string;
-  createdAt: string;
-}
-
-export interface PatternDetection {
-  name: string;
-  type: 'bullish' | 'bearish' | 'neutral';
-  confidence: number;
-  description: string;
-}
-
-export interface RiskParameters {
-  accountSize: number;
-  riskPerTrade: number;
-  maxDrawdown: number;
-  stopLoss: number;
-  takeProfit: number;
-}
-
-export interface RiskMetrics {
-  positionSize: number;
-  potentialLoss: number;
-  potentialGain: number;
-  riskRewardRatio: number;
-}
-
-export interface PositionSize {
-  units: number;
-  value: number;
-  leverage: number;
-}
+export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w' | '1M';

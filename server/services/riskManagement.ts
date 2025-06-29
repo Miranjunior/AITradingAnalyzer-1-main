@@ -1,12 +1,17 @@
-import { 
-  RiskParameters,
-  PositionSize,
-  RiskMetrics,
-  TradeSetup
-} from '../../shared/types/trading';
-
 export class RiskManagementService {
-  calculatePositionSize(params: RiskParameters): PositionSize {
+  calculatePositionSize(params: {
+    accountBalance: number;
+    riskPercentage: number;
+    entryPrice: number;
+    stopLoss: number;
+    leverage?: number;
+  }): {
+    size: number;
+    value: number;
+    riskAmount: number;
+    riskPerUnit: number;
+    leverage: number;
+  } {
     const { 
       accountBalance,
       riskPercentage,
@@ -36,7 +41,22 @@ export class RiskManagementService {
     };
   }
 
-  calculateRiskMetrics(setup: TradeSetup): RiskMetrics {
+  calculateRiskMetrics(setup: {
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit: number;
+    positionSize: number;
+    confidence: number;
+    accountBalance: number;
+  }): {
+    risk: number;
+    reward: number;
+    riskRewardRatio: number;
+    winRate: number;
+    expectancy: number;
+    maxDrawdown: number;
+    kelly: number;
+  } {
     const { 
       entryPrice,
       stopLoss,
@@ -71,7 +91,14 @@ export class RiskManagementService {
     return ((winRate * (1 + riskRewardRatio)) - 1) / riskRewardRatio;
   }
 
-  validateTradeSetup(setup: TradeSetup): {
+  validateTradeSetup(setup: {
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit: number;
+    positionSize: number;
+    confidence: number;
+    accountBalance: number;
+  }): {
     isValid: boolean;
     reasons: string[];
   } {
@@ -144,7 +171,7 @@ export class RiskManagementService {
       trades.push({
         tradeNumber: i,
         balance: currentBalance,
-        result: isWin ? 'win' : 'loss',
+        result: isWin ? ('win' as 'win') : ('loss' as 'loss'),
         change: changeAmount
       });
     }

@@ -85,7 +85,7 @@ function WatchlistItem({
 }: WatchlistItemProps) {
   const { data: marketData } = useMarketData(asset.symbol);
   
-  const priceChange = marketData?.changePercent || 0;
+  const priceChange = marketData?.changePercent ? Number(marketData.changePercent) : 0;
   const isPositive = priceChange > 0;
   const isNegative = priceChange < 0;
 
@@ -122,7 +122,7 @@ function WatchlistItem({
 
       {marketData && (
         <div className="mt-2 flex justify-between items-center">
-          <span className="text-lg">{formatPrice(marketData.price)}</span>
+          <span className="text-lg">{formatPrice(Number(marketData.price))}</span>
           <span className={`
             text-sm font-medium
             ${isPositive ? 'text-green-400' : ''}

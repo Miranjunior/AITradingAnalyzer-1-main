@@ -27,27 +27,23 @@ export function MarketSentiment({ sentiment, newsImpact }: MarketSentimentProps)
   return (
     <Card className="p-4">
       <h3 className="text-xl font-semibold mb-4">Sentimento de Mercado</h3>
-
       {sentiment && (
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium">Otimista</label>
-            <Progress value={sentiment.bullish} max={100} variant="success" />
+            <Progress value={sentiment.bullish} max={100} />
             <span className="text-sm">{sentiment.bullish}%</span>
           </div>
-
           <div>
             <label className="block text-sm font-medium">Pessimista</label>
-            <Progress value={sentiment.bearish} max={100} variant="danger" />
+            <Progress value={sentiment.bearish} max={100} />
             <span className="text-sm">{sentiment.bearish}%</span>
           </div>
-
           <div>
             <label className="block text-sm font-medium">Neutro</label>
-            <Progress value={sentiment.neutral} max={100} variant="neutral" />
+            <Progress value={sentiment.neutral} max={100} />
             <span className="text-sm">{sentiment.neutral}%</span>
           </div>
-
           <div className="mt-4">
             <span className="text-sm font-medium">Sentimento Geral: </span>
             <span className={`font-bold ${
@@ -62,7 +58,6 @@ export function MarketSentiment({ sentiment, newsImpact }: MarketSentimentProps)
           </div>
         </div>
       )}
-
       {filteredNews && filteredNews.length > 0 && (
         <div className="mt-6">
           <h4 className="font-medium mb-2">Notícias Relevantes</h4>

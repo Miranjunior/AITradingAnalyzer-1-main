@@ -22,12 +22,13 @@ export const candlestickChartConfig: ChartOptions = {
           return `${context[0].label}`;
         },
         label: (context) => {
-          const data = context.parsed;
+          // Para gráficos de candle, use context.raw para acessar os valores OHLC
+          const data = context.raw as { open: number; high: number; low: number; close: number };
           return [
-            `Open: ${data.o?.toFixed(2)}`,
-            `High: ${data.h?.toFixed(2)}`,
-            `Low: ${data.l?.toFixed(2)}`,
-            `Close: ${data.c?.toFixed(2)}`,
+            `Open: ${data.open?.toFixed(2)}`,
+            `High: ${data.high?.toFixed(2)}`,
+            `Low: ${data.low?.toFixed(2)}`,
+            `Close: ${data.close?.toFixed(2)}`,
           ];
         },
       },
@@ -46,7 +47,7 @@ export const candlestickChartConfig: ChartOptions = {
       },
       grid: {
         color: '#334155',
-        drawBorder: false,
+        // drawBorder removido
       },
       ticks: {
         color: '#94A3B8',
@@ -57,7 +58,7 @@ export const candlestickChartConfig: ChartOptions = {
       position: 'right',
       grid: {
         color: '#334155',
-        drawBorder: false,
+        // drawBorder removido
       },
       ticks: {
         color: '#94A3B8',
@@ -98,7 +99,7 @@ export const lineChartConfig: ChartOptions = {
     x: {
       grid: {
         color: '#334155',
-        drawBorder: false,
+        // drawBorder removido
       },
       ticks: {
         color: '#94A3B8',
@@ -109,7 +110,7 @@ export const lineChartConfig: ChartOptions = {
       position: 'right',
       grid: {
         color: '#334155',
-        drawBorder: false,
+        // drawBorder removido
       },
       ticks: {
         color: '#94A3B8',

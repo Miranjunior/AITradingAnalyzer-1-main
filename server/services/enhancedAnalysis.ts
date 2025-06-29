@@ -1,11 +1,88 @@
+// Tipos locais baseados nos tipos reais do projeto
+import { AIAnalysis } from '../../client/src/types/trading';
+
+export interface TimeframeAnalysis {
+  timeframe: string;
+  analysis: AIAnalysis;
+  weight: number;
+}
+
+export interface MarketRegime {
+  type: 'TRENDING' | 'RANGING' | 'TRANSITIONING';
+  direction?: 'UP' | 'DOWN';
+  strength?: number;
+  volatility: number;
+  range?: { high: number; low: number };
+  bias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+}
+
+export interface CorrelationData {
+  timeframe1: string;
+  timeframe2: string;
+  correlation: number;
+  agreement: boolean;
+}
+
+export interface EnhancedAnalysis {
+  symbol: string;
+  timestamp: string;
+  timeframeAnalyses: TimeframeAnalysis[];
+  marketRegime: MarketRegime;
+  correlations: CorrelationData[];
+  signalConfirmation: {
+    signal: 'BUY' | 'SELL' | 'HOLD';
+    confidence: number;
+    confirmations: string[];
+  };
+  volumeAnalysis: {
+    trend: string;
+    strength: number;
+    abnormalVolume: boolean;
+  };
+  confidence: number;
+}
+
 import { aiAnalysis } from './aiAnalysis';
 import { marketData } from './marketData';
-import { 
-  EnhancedAnalysis,
-  TimeframeAnalysis,
-  MarketRegime,
-  CorrelationData
-} from '../../shared/types/trading';
+import { storage } from '../storage';
+// Importar tipos do frontend para uso nas funções utilitárias
+import type { TechnicalIndicators, CandlestickData } from '../../client/src/types/trading';
+
+// Copiar funções de normalização para este arquivo (evita import/export cross)
+function normalizeIndicators(data: any): TechnicalIndicators | undefined {
+  if (!data) return undefined;
+  return {
+    symbol: data.symbol,
+    timeframe: data.timeframe,
+    rsi: data.rsi ?? undefined,
+    macd: data.macd ?? undefined,
+    macdSignal: data.macdSignal ?? undefined,
+    macdHistogram: data.macdHistogram ?? undefined,
+    sma20: data.sma20 ?? data.ma20 ?? undefined,
+    sma50: data.sma50 ?? data.ma50 ?? undefined,
+    ema20: data.ema20 ?? undefined,
+    ema50: data.ema50 ?? undefined,
+    bollingerUpper: data.bollingerUpper ?? undefined,
+    bollingerMiddle: data.bollingerMiddle ?? undefined,
+    bollingerLower: data.bollingerLower ?? undefined,
+    stochastic: data.stochastic ?? undefined,
+    williamsR: data.williamsR ?? undefined,
+    adx: data.adx ?? undefined,
+    updatedAt: data.updatedAt || data.timestamp || new Date(),
+  };
+}
+function normalizeCandlesticks(arr: any[]): CandlestickData[] {
+  return (arr || []).map(c => ({
+    symbol: c.symbol,
+    timeframe: c.timeframe,
+    timestamp: c.timestamp || new Date(),
+    open: c.open ?? '0',
+    high: c.high ?? '0',
+    low: c.low ?? '0',
+    close: c.close ?? '0',
+    volume: typeof c.volume === 'number' ? c.volume : 0,
+  }));
+}
 
 export class EnhancedAnalysisService {
   private timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w', '1M'];
@@ -49,12 +126,15 @@ export class EnhancedAnalysisService {
       this.timeframes.map(async (timeframe) => {
         try {
           const data = await marketData.getMarketData(symbol);
+          const indicators = await storage.getTechnicalIndicators(symbol, timeframe);
+          const candlesticks = await storage.getCandlestickData(symbol, timeframe, 100);
+          // Corrigir chamada para IA:
           const analysis = await aiAnalysis.generateAnalysis({
             symbol,
             timeframe,
             marketData: data,
-            indicators: await marketData.getIndicators(symbol, timeframe),
-            candlesticks: await marketData.getCandlesticks(symbol, timeframe)
+            indicators: normalizeIndicators(indicators)!,
+            candlesticks: normalizeCandlesticks(candlesticks)
           });
           
           return {
@@ -135,8 +215,13 @@ export class EnhancedAnalysisService {
       HOLD: 0
     };
     
+    // Corrigir multiplicação: garantir que s.confidence e s.weight são number
     signals.forEach(s => {
-      weightedSignals[s.signal] += s.weight * s.confidence;
+      const weight = typeof s.weight === 'string' ? parseFloat(s.weight) : s.weight;
+      const confidence = typeof s.confidence === 'string' ? parseFloat(s.confidence) : s.confidence;
+      if (s.signal === 'BUY' || s.signal === 'SELL' || s.signal === 'HOLD') {
+        weightedSignals[s.signal] += weight * confidence;
+      }
     });
     
     const totalWeight = signals.reduce((sum, s) => sum + s.weight, 0);
@@ -165,9 +250,10 @@ export class EnhancedAnalysisService {
     strength: number;
     abnormalVolume: boolean;
   } {
+    // Corrigir acesso a volumeAnalysis: garantir existência ou usar valor padrão
     const volumeData = analyses.map(a => ({
       timeframe: a.timeframe,
-      volume: a.analysis.volumeAnalysis || {}
+      volume: (a.analysis as any).volumeAnalysis || {}
     }));
     
     const aggregateStrength = volumeData.reduce((sum, data) => 

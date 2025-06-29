@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketData } from '../hooks/useMarketData';
-import { useTechnicalIndicators } from '../hooks/useTechnicalIndicators';
-import { CandlestickData, TechnicalIndicators } from '../types/trading';
+import { CandlestickData } from '../types/trading';
 
 interface AdvancedTradingChartProps {
   symbol: string;
@@ -21,10 +20,9 @@ export function AdvancedTradingChart({
 }: AdvancedTradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chart, setChart] = useState<IChartApi | null>(null);
-  const [candlestickSeries, setCandlestickSeries] = useState<ISeriesApi<"Candlestick"> | null>(null);
-  
+  const [candlestickSeries, setCandlestickSeries] = useState<ISeriesApi<'Candlestick'> | null>(null);
+
   const { data: marketData } = useMarketData(symbol);
-  const { data: indicators } = useTechnicalIndicators(symbol, timeframe);
 
   // Configuração inicial do gráfico
   useEffect(() => {
@@ -42,17 +40,7 @@ export function AdvancedTradingChart({
         horzLines: { color: darkMode ? '#2B2B2B' : '#E6E6E6' },
       },
       crosshair: {
-        mode: 'normal',
-        vertLine: {
-          width: 1,
-          color: darkMode ? '#4F4F4F' : '#B8B8B8',
-          style: 0,
-        },
-        horzLine: {
-          width: 1,
-          color: darkMode ? '#4F4F4F' : '#B8B8B8',
-          style: 0,
-        },
+        mode: 0, // normal
       },
       timeScale: {
         borderColor: darkMode ? '#4F4F4F' : '#B8B8B8',
@@ -67,6 +55,8 @@ export function AdvancedTradingChart({
     const newChart = createChart(chartContainerRef.current, chartOptions);
     setChart(newChart);
 
+    // Usar addCandlestickSeries corretamente
+    // @ts-ignore
     const candleSeries = newChart.addCandlestickSeries({
       upColor: '#26A69A',
       downColor: '#EF5350',
@@ -75,93 +65,33 @@ export function AdvancedTradingChart({
       wickUpColor: '#26A69A',
       wickDownColor: '#EF5350',
     });
-    setCandlestickSeries(candleSeries);
-
-    // Adicionar indicadores
-    setupIndicators(newChart, indicators);
+    setCandlestickSeries(candleSeries as ISeriesApi<'Candlestick'>);
 
     return () => {
       newChart.remove();
     };
-  }, [darkMode]);
+  }, [darkMode, width, height]);
 
   // Atualizar dados do gráfico
   useEffect(() => {
     if (!candlestickSeries || !marketData) return;
-
-    const formattedData = formatCandlestickData(marketData.candlesticks);
+    // marketData deve ser um array de CandlestickData
+    const formattedData = Array.isArray(marketData)
+      ? formatCandlestickData(marketData)
+      : [];
+    // Ajustar time para string (ISO) conforme esperado
     candlestickSeries.setData(formattedData);
-
-    // Atualizar indicadores
-    if (indicators) {
-      updateIndicators(chart!, indicators);
-    }
-  }, [marketData, indicators]);
-
-  // Configurar indicadores técnicos
-  const setupIndicators = (chart: IChartApi, indicators: TechnicalIndicators | null) => {
-    if (!indicators) return;
-
-    // Bollinger Bands
-    const bollingerBands = chart.addLineSeries({
-      color: 'rgba(38, 166, 154, 0.4)',
-      lineWidth: 1,
-      priceLineVisible: false,
-    });
-
-    // RSI
-    const rsiPane = chart.addPane(150);
-    const rsiSeries = rsiPane.addLineSeries({
-      color: '#2962FF',
-      lineWidth: 2,
-      priceFormat: {
-        type: 'custom',
-        formatter: (price: number) => price.toFixed(2),
-      },
-    });
-
-    // MACD
-    const macdPane = chart.addPane(150);
-    const macdLineSeries = macdPane.addLineSeries({
-      color: '#2962FF',
-      lineWidth: 2,
-    });
-    const signalLineSeries = macdPane.addLineSeries({
-      color: '#FF6D00',
-      lineWidth: 2,
-    });
-    const histogramSeries = macdPane.addHistogramSeries({
-      color: '#26A69A',
-    });
-
-    // Volume
-    const volumeSeries = chart.addHistogramSeries({
-      color: '#26A69A',
-      priceFormat: {
-        type: 'volume',
-      },
-      priceScaleId: '',
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
-    });
-  };
-
-  // Atualizar indicadores
-  const updateIndicators = (chart: IChartApi, indicators: TechnicalIndicators) => {
-    // Implementar atualização de cada indicador
-  };
+  }, [marketData, candlestickSeries]);
 
   // Formatar dados para o gráfico
   const formatCandlestickData = (candlesticks: CandlestickData[]) => {
     return candlesticks.map(candle => ({
-      time: new Date(candle.timestamp).getTime() / 1000,
+      time: new Date(candle.timestamp).toISOString(),
       open: parseFloat(candle.open),
       high: parseFloat(candle.high),
       low: parseFloat(candle.low),
       close: parseFloat(candle.close),
-      volume: parseFloat(candle.volume || '0'),
+      // volume não é obrigatório para CandlestickData do lightweight-charts
     }));
   };
 

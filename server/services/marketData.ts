@@ -1,8 +1,8 @@
 import { WebSocket } from 'ws';
 import { storage } from '../storage';
-import { calculateIndicators } from './indicators';
+import { TechnicalIndicatorsService } from './indicators';
 import { 
-  MarketData, 
+  InsertMarketData, 
   CandlestickData,
   TechnicalIndicators 
 } from '../../shared/types/trading';
@@ -11,9 +11,11 @@ export class MarketDataService {
   private connections: Map<string, WebSocket> = new Map();
   private updateIntervals: Map<string, NodeJS.Timeout> = new Map();
   private cache: Map<string, {
-    data: MarketData;
+    data: InsertMarketData;
     timestamp: number;
   }> = new Map();
+  
+  private indicatorsService = new TechnicalIndicatorsService();
   
   constructor() {
     // Limpar cache periodicamente
@@ -68,16 +70,20 @@ export class MarketDataService {
         return;
       }
       
-      const marketData: MarketData = this.transformMarketData(data);
+      const marketData: InsertMarketData = this.transformMarketData(data);
       
       // Atualizar cache
       this.updateCache(marketData.symbol, marketData);
       
       // Persistir dados
-      await storage.updateMarketData(marketData);
+      await storage.updateMarketData(marketData.symbol, marketData);
       
       // Calcular e atualizar indicadores
-      await this.updateTechnicalIndicators(marketData.symbol);
+      // Corrigir: buscar candlesticks com symbol e timeframe padrão '1d'
+      const candlesticks = await storage.getCandlestickData(marketData.symbol, '1d', 200);
+      // Filtrar/remover candlesticks com volume null
+      const validCandlesticks = (candlesticks || []).filter(c => c && c.volume !== null).map(c => ({ ...c, volume: c.volume ?? 0 }));
+      await this.indicatorsService.calculateIndicators(validCandlesticks);
       
     } catch (error) {
       console.error('Erro processando dados em tempo real:', error);
@@ -95,21 +101,23 @@ export class MarketDataService {
   }
 
   // Transformação de dados
-  private transformMarketData(data: any): MarketData {
+  private transformMarketData(data: any): InsertMarketData {
     return {
       symbol: data.symbol,
-      price: parseFloat(data.price).toFixed(8),
-      volume: data.volume ? parseFloat(data.volume).toFixed(2) : '0',
+      price: data.price,
+      volume: data.volume ? parseFloat(data.volume) : 0,
       high: data.high ? parseFloat(data.high).toFixed(8) : data.price,
       low: data.low ? parseFloat(data.low).toFixed(8) : data.price,
       open: data.open ? parseFloat(data.open).toFixed(8) : data.price,
       previousClose: data.previousClose || data.price,
-      timestamp: new Date().toISOString()
+      change: data.change || undefined,
+      changePercent: data.changePercent || undefined,
+      updatedAt: new Date(),
     };
   }
 
   // Gestão de cache
-  private updateCache(symbol: string, data: MarketData) {
+  private updateCache(symbol: string, data: InsertMarketData) {
     this.cache.set(symbol, {
       data,
       timestamp: Date.now()
@@ -126,7 +134,7 @@ export class MarketDataService {
   }
 
   // API Pública
-  async getMarketData(symbol: string): Promise<MarketData> {
+  async getMarketData(symbol: string): Promise<InsertMarketData> {
     // Verificar cache primeiro
     const cached = this.cache.get(symbol);
     if (cached && Date.now() - cached.timestamp < 30000) {
@@ -140,8 +148,26 @@ export class MarketDataService {
         ws.send(JSON.stringify({ action: 'getQuote', symbol }));
       }
       
-      const data = await storage.getLatestMarketData(symbol);
-      return data;
+      const data = await storage.getLatestMarketData();
+      // Corrigir retorno: garantir que seja InsertMarketData (não array)
+      const safe = (obj: any) => obj === null ? undefined : obj;
+      // Se vier array, pegar o primeiro objeto
+      const item = Array.isArray(data) ? data[0] : data;
+      if (!item || typeof item !== 'object') {
+        throw new Error('Dados de mercado inválidos');
+      }
+      return {
+        symbol: safe(item.symbol),
+        price: safe(item.price),
+        volume: item.volume ?? 0,
+        high: safe(item.high),
+        low: safe(item.low),
+        open: safe(item.open),
+        previousClose: safe(item.previousClose),
+        change: safe(item.change),
+        changePercent: safe(item.changePercent),
+        updatedAt: new Date(),
+      };
       
     } catch (error) {
       console.error(`Erro obtendo dados para ${symbol}:`, error);

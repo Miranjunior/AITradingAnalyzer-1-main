@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { AdvancedTradingChart } from './AdvancedTradingChart';
-import { AIAnalysisPanel } from './AIAnalysisPanel';
+import { AIAnalysisPanel } from './AlAnalysisPanel';
 import { TradingControls } from './TradingControls';
 import { WatchlistSidebar } from './WatchlistSidebar';
 import { AlertsPanel } from './AlertsPanel';
 import { useMarketData } from '../hooks/useMarketData';
 import { useAIAnalysis } from '../hooks/useAIAnalysis';
-import { Asset, TimeFrame } from '../types/trading';
+import { Asset, Timeframe } from '../types/trading';
 
 export function TradingDashboard() {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [selectedTimeframe, setSelectedTimeframe] = useState<TimeFrame>('1h');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1h');
   const [showAlerts, setShowAlerts] = useState(false);
 
   const { data: marketData, isLoading: isLoadingMarket } = useMarketData(
@@ -26,7 +26,7 @@ export function TradingDashboard() {
     setSelectedAsset(asset);
   };
 
-  const handleTimeframeChange = (timeframe: TimeFrame) => {
+  const handleTimeframeChange = (timeframe: Timeframe) => {
     setSelectedTimeframe(timeframe);
   };
 
@@ -42,13 +42,7 @@ export function TradingDashboard() {
       {/* Área principal */}
       <div className="flex-1 flex flex-col">
         {/* Controles superiores */}
-        <TradingControls
-          selectedAsset={selectedAsset}
-          selectedTimeframe={selectedTimeframe}
-          onTimeframeChange={handleTimeframeChange}
-          onToggleAlerts={() => setShowAlerts(!showAlerts)}
-          className="p-4 border-b border-gray-800"
-        />
+        <TradingControls />
 
         {/* Área do gráfico */}
         <div className="flex-1 relative">
@@ -67,7 +61,7 @@ export function TradingDashboard() {
 
         {/* Painel de análise IA */}
         <AIAnalysisPanel
-          analysis={analysis}
+          analysis={analysis ?? null}
           isLoading={isLoadingAnalysis}
           className="h-64 border-t border-gray-800"
         />

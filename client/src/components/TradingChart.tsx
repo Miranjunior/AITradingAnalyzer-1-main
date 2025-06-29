@@ -248,9 +248,13 @@ const TradingChart: React.FC<TradingChartProps> = ({
             scales: {
               ...lineChartConfig.scales,
               y: {
-                ...lineChartConfig.scales?.y,
+                type: 'linear', // Garante o tipo correto
+                position: 'right',
+                grid: {
+                  color: '#94A3B8',
+                },
                 ticks: {
-                  ...lineChartConfig.scales?.y?.ticks,
+                  color: '#94A3B8',
                   callback: function(value) {
                     return `R$ ${(value as number).toFixed(2)}`;
                   },

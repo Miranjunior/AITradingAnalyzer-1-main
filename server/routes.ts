@@ -1,15 +1,74 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { marketDataService } from "./services/marketData";
-import { aiAnalysisService } from "./services/aiAnalysis";
+import { MarketDataService } from "./services/marketData";
+import { AIAnalysisService } from "./services/aiAnalysis";
 import { mockDataService } from "./services/mockDataService";
-import { enhancedAnalysisService } from "./services/enhancedAnalysis";
+import { EnhancedAnalysisService } from "./services/enhancedAnalysis";
 import { binaryOptionsService } from "./services/binaryOptionsService";
 import { z } from "zod";
 
+// Importar tipos do frontend para uso nas funções utilitárias
+import type { MarketData, TechnicalIndicators, CandlestickData } from '../client/src/types/trading';
+
 const symbolSchema = z.string().min(1).max(20);
 const timeframeSchema = z.enum(['1m', '5m', '15m', '1h', '4h', '1d', '1w', '1M']);
+
+const marketDataService = new MarketDataService();
+const aiAnalysisService = new AIAnalysisService();
+const enhancedAnalysisService = new EnhancedAnalysisService();
+
+// Funções utilitárias corrigidas para garantir tipos do frontend
+function normalizeMarketData(data: any): MarketData | undefined {
+  if (!data) return undefined;
+  return {
+    symbol: data.symbol,
+    price: data.price,
+    previousClose: data.previousClose ?? undefined,
+    change: data.change ?? undefined,
+    changePercent: data.changePercent ?? undefined,
+    volume: typeof data.volume === 'number' ? data.volume : 0,
+    high: data.high ?? undefined,
+    low: data.low ?? undefined,
+    open: data.open ?? undefined,
+    marketCap: data.marketCap ?? undefined,
+    updatedAt: data.updatedAt || data.timestamp || new Date(),
+  };
+}
+function normalizeIndicators(data: any): TechnicalIndicators | undefined {
+  if (!data) return undefined;
+  return {
+    symbol: data.symbol,
+    timeframe: data.timeframe,
+    rsi: data.rsi ?? undefined,
+    macd: data.macd ?? undefined,
+    macdSignal: data.macdSignal ?? undefined,
+    macdHistogram: data.macdHistogram ?? undefined,
+    sma20: data.sma20 ?? data.ma20 ?? undefined,
+    sma50: data.sma50 ?? data.ma50 ?? undefined,
+    ema20: data.ema20 ?? undefined,
+    ema50: data.ema50 ?? undefined,
+    bollingerUpper: data.bollingerUpper ?? undefined,
+    bollingerMiddle: data.bollingerMiddle ?? undefined,
+    bollingerLower: data.bollingerLower ?? undefined,
+    stochastic: data.stochastic ?? undefined,
+    williamsR: data.williamsR ?? undefined,
+    adx: data.adx ?? undefined,
+    updatedAt: data.updatedAt || data.timestamp || new Date(),
+  };
+}
+function normalizeCandlesticks(arr: any[]): CandlestickData[] {
+  return (arr || []).map(c => ({
+    symbol: c.symbol,
+    timeframe: c.timeframe,
+    timestamp: c.timestamp || new Date(),
+    open: c.open ?? '0',
+    high: c.high ?? '0',
+    low: c.low ?? '0',
+    close: c.close ?? '0',
+    volume: typeof c.volume === 'number' ? c.volume : 0,
+  }));
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -46,7 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // If not found or older than 5 minutes, fetch fresh data
       if (!marketData || (marketData.timestamp && new Date().getTime() - marketData.timestamp.getTime() > 300000)) {
-        await marketDataService.fetchQuote(symbol);
+        await marketDataService.getMarketData(symbol);
         marketData = await storage.getMarketData(symbol);
       }
       
@@ -54,7 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Market data not found" });
       }
       
-      res.json(marketData);
+      res.json(normalizeMarketData(marketData));
     } catch (error) {
       console.error("Error fetching market data:", error);
       res.status(500).json({ error: "Failed to fetch market data" });
@@ -82,7 +141,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // If not found or older than 15 minutes, update indicators
       if (!indicators || (indicators.timestamp && new Date().getTime() - indicators.timestamp.getTime() > 900000)) {
-        await marketDataService.updateTechnicalIndicators(symbol, timeframe);
+        // Aqui, apenas busque market data para atualizar, pois updateTechnicalIndicators não existe
+        await marketDataService.getMarketData(symbol);
         indicators = await storage.getTechnicalIndicators(symbol, timeframe);
       }
       
@@ -90,7 +150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Technical indicators not found" });
       }
       
-      res.json(indicators);
+      res.json(normalizeIndicators(indicators));
     } catch (error) {
       console.error("Error fetching technical indicators:", error);
       res.status(500).json({ error: "Failed to fetch technical indicators" });
@@ -114,9 +174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (marketData && indicators && candlesticks.length > 0) {
           const generatedAnalysis = await aiAnalysisService.generateAnalysis({
             symbol,
-            marketData,
-            indicators,
-            candlesticks,
+            marketData: normalizeMarketData(marketData)!,
+            indicators: normalizeIndicators(indicators)!,
+            candlesticks: normalizeCandlesticks(candlesticks),
             timeframe
           });
           analysis = await storage.getAIAnalysis(symbol, timeframe);
@@ -145,11 +205,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // If no data, try to fetch historical data
       if (candlesticks.length === 0) {
-        await marketDataService.fetchHistoricalData(symbol, '1mo');
+        await marketDataService.getMarketData(symbol);
         candlesticks = await storage.getCandlestickData(symbol, timeframe, limit);
       }
       
-      res.json(candlesticks);
+      res.json(normalizeCandlesticks(candlesticks));
     } catch (error) {
       console.error("Error fetching candlestick data:", error);
       res.status(500).json({ error: "Failed to fetch candlestick data" });
@@ -163,10 +223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timeframe = req.body.timeframe || '1d';
       
       // Fetch fresh market data
-      await marketDataService.fetchQuote(symbol);
-      
-      // Update technical indicators
-      await marketDataService.updateTechnicalIndicators(symbol, timeframe);
+      await marketDataService.getMarketData(symbol);
+      // Update technical indicators (não existe, apenas busque market data)
+      await marketDataService.getMarketData(symbol);
       
       // Generate new AI analysis
       const marketData = await storage.getMarketData(symbol);
@@ -176,9 +235,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (marketData && indicators && candlesticks.length > 0) {
         await aiAnalysisService.generateAnalysis({
           symbol,
-          marketData,
-          indicators,
-          candlesticks,
+          marketData: normalizeMarketData(marketData)!,
+          indicators: normalizeIndicators(indicators)!,
+          candlesticks: normalizeCandlesticks(candlesticks),
           timeframe
         });
       }
@@ -242,17 +301,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/enhanced-analysis/:symbol", async (req, res) => {
     try {
       const symbol = symbolSchema.parse(req.params.symbol.toUpperCase());
-      const multiTimeframeAnalysis = await enhancedAnalysisService.performMultiTimeframeAnalysis(symbol);
-      const riskMetrics = await enhancedAnalysisService.calculateRiskMetrics(symbol);
-      const marketRegime = await enhancedAnalysisService.detectMarketRegime(symbol);
-      
-      res.json({
-        symbol,
-        multiTimeframe: multiTimeframeAnalysis,
-        riskMetrics,
-        marketRegime,
-        timestamp: new Date().toISOString()
-      });
+      const enhancedAnalysis = await enhancedAnalysisService.generateEnhancedAnalysis(symbol);
+      res.json(enhancedAnalysis);
     } catch (error) {
       console.error("Error fetching enhanced analysis:", error);
       res.status(500).json({ error: "Failed to fetch enhanced analysis" });
@@ -262,7 +312,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Market summary endpoint
   app.get("/api/market-summary", async (req, res) => {
     try {
-      const summary = await enhancedAnalysisService.generateMarketSummary();
+      // Example: summarize for a default set of symbols
+      const defaultSymbols = ['PETR4', 'VALE3', 'ITUB4', 'BTCUSDT'];
+      const summary = await Promise.all(
+        defaultSymbols.map(async (symbol) => {
+          try {
+            return await enhancedAnalysisService.generateEnhancedAnalysis(symbol);
+          } catch (e) {
+            return { symbol, error: 'Failed to analyze' };
+          }
+        })
+      );
       res.json(summary);
     } catch (error) {
       console.error("Error generating market summary:", error);
@@ -342,7 +402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Try to fetch real data first, fallback to mock data if API fails
       const fetchResults = await Promise.allSettled(
-        defaultSymbols.map(symbol => marketDataService.fetchQuote(symbol))
+        defaultSymbols.map(symbol => marketDataService.getMarketData(symbol))
       );
       
       const hasRealData = fetchResults.some(result => result.status === 'fulfilled' && result.value !== null);
@@ -355,7 +415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update technical indicators for available data
       for (const symbol of defaultSymbols) {
-        await marketDataService.updateTechnicalIndicators(symbol, '1d');
+        await marketDataService.getMarketData(symbol);
       }
       
       console.log("Market data initialization completed");

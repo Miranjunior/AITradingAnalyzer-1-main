@@ -7,16 +7,17 @@ export class TechnicalIndicatorsService {
     }
 
     const prices = candlesticks.map(c => parseFloat(c.close));
-    const volumes = candlesticks.map(c => parseFloat(c.volume || '0'));
+    const volumes = candlesticks.map(c => c.volume);
 
     return {
+      symbol: candlesticks[0].symbol,
+      timeframe: candlesticks[0].timeframe,
       rsi: this.calculateRSI(prices, 14).toString(),
       macd: this.calculateMACD(prices).macd.toString(),
       macdSignal: this.calculateMACD(prices).signal.toString(),
       macdHistogram: this.calculateMACD(prices).histogram.toString(),
-      ma20: this.calculateSMA(prices, 20).toString(),
-      ma50: this.calculateSMA(prices, 50).toString(),
-      ma200: this.calculateSMA(prices, 200).toString(),
+      sma20: this.calculateSMA(prices, 20).toString(),
+      sma50: this.calculateSMA(prices, 50).toString(),
       ema20: this.calculateEMA(prices, 20).toString(),
       ema50: this.calculateEMA(prices, 50).toString(),
       bollingerUpper: this.calculateBollingerBands(prices).upper.toString(),
@@ -25,10 +26,7 @@ export class TechnicalIndicatorsService {
       stochastic: this.calculateStochastic(candlesticks).toString(),
       williamsR: this.calculateWilliamsR(candlesticks).toString(),
       adx: this.calculateADX(candlesticks).toString(),
-      obv: this.calculateOBV(prices, volumes).toString(),
-      momentum: this.calculateMomentum(prices, 14).toString(),
-      roc: this.calculateROC(prices, 14).toString(),
-      updated: new Date().toISOString()
+      updatedAt: new Date(),
     };
   }
 

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import NavigationHeader from '@/components/NavigationHeader';
-import WatchlistSidebar from '@/components/WatchlistSidebar';
+import { WatchlistSidebar } from '@/components/WatchlistSidebar';
 import ChartArea from '@/components/ChartArea';
 import AnalysisSidebar from '@/components/AnalysisSidebar';
-import { Timeframe } from '@/types/trading';
+import { Timeframe, Asset } from '@/types/trading';
 
 const Dashboard: React.FC = () => {
   const [selectedSymbol, setSelectedSymbol] = useState<string>('PETR4');
@@ -15,6 +15,16 @@ const Dashboard: React.FC = () => {
 
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol);
+  };
+
+  // Exemplo de asset fictício para manter compatibilidade
+  const selectedAsset: Asset = {
+    symbol: selectedSymbol,
+    name: selectedSymbol,
+    type: 'stock',
+    market: 'B3',
+    currency: 'BRL',
+    isActive: true,
   };
 
   return (
@@ -29,8 +39,8 @@ const Dashboard: React.FC = () => {
       <div className="flex h-screen pt-16">
         {/* Left Sidebar - Watchlist */}
         <WatchlistSidebar 
-          selectedSymbol={selectedSymbol}
-          onSymbolSelect={handleSymbolSelect}
+          selectedAsset={selectedAsset}
+          onAssetSelect={asset => setSelectedSymbol(asset.symbol)}
         />
 
         {/* Main Chart Area */}

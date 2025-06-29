@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Dialog } from './ui/dialog';
 import { Input } from './ui/input';
-import { Select } from './ui/select';
+import { Select, SelectTrigger, SelectContent, SelectItem } from './ui/select';
 
 interface AlertsPanelProps {
   symbol: string | undefined;
@@ -118,11 +118,10 @@ function AlertCard({ alert, onDelete }: AlertCardProps) {
             </Badge>
             <span className="text-sm text-gray-400">{alert.type}</span>
           </div>
-          <p className="text-sm mb-1">{alert.description}</p>
-          {alert.expiresAt && (
-            <p className="text-xs text-gray-500">
-              Expira em: {new Date(alert.expiresAt).toLocaleString()}
-            </p>
+          <p className="text-sm mb-1">Condição: {alert.condition} {alert.value}</p>
+          <p className="text-xs text-gray-500">Criado em: {new Date(alert.createdAt).toLocaleString()}</p>
+          {alert.triggeredAt && (
+            <p className="text-xs text-yellow-500">Disparado em: {new Date(alert.triggeredAt).toLocaleString()}</p>
           )}
         </div>
         <Button
@@ -152,125 +151,54 @@ function CreateAlertDialog({
   symbol
 }: CreateAlertDialogProps) {
   const [alertType, setAlertType] = useState<AlertType>('PRICE');
-  const [price, setPrice] = useState('');
+  const [value, setValue] = useState('');
   const [condition, setCondition] = useState('ABOVE');
-  const [indicator, setIndicator] = useState('RSI');
-  const [threshold, setThreshold] = useState('');
-  const [pattern, setPattern] = useState('HAMMER');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!symbol) return;
-
     const alertInput: AlertInput = {
       symbol,
       type: alertType,
-      status: 'ACTIVE',
-      ...(alertType === 'PRICE' && {
-        price: Number(price),
-        condition
-      }),
-      ...(alertType === 'INDICATOR' && {
-        indicator,
-        threshold: Number(threshold),
-        condition
-      }),
-      ...(alertType === 'PATTERN' && {
-        pattern,
-        minConfidence: 70
-      })
+      condition,
+      value: Number(value)
     };
-
     onCreate(alertInput);
   };
 
   return (
-    <Dialog open={isOpen} onClose={onClose}>
+    <Dialog open={isOpen}>
       <div className="bg-gray-800 p-6 rounded-lg">
         <h3 className="text-lg font-semibold mb-4">Criar Novo Alerta</h3>
-        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm mb-1">Tipo de Alerta</label>
-            <Select
-              value={alertType}
-              onChange={(e) => setAlertType(e.target.value as AlertType)}
-              className="w-full"
-            >
-              <option value="PRICE">Preço</option>
-              <option value="INDICATOR">Indicador</option>
-              <option value="PATTERN">Padrão</option>
+            <Select value={alertType} onValueChange={(v) => setAlertType(v as AlertType)}>
+              <SelectTrigger className="w-full" />
+              <SelectContent>
+                <SelectItem value="PRICE">Preço</SelectItem>
+                <SelectItem value="TECHNICAL">Indicador</SelectItem>
+                <SelectItem value="PATTERN">Padrão</SelectItem>
+              </SelectContent>
             </Select>
           </div>
-
-          {alertType === 'PRICE' && (
-            <>
-              <div>
-                <label className="block text-sm mb-1">Preço</label>
-                <Input
-                  type="number"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  step="any"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Condição</label>
-                <Select
-                  value={condition}
-                  onChange={(e) => setCondition(e.target.value)}
-                >
-                  <option value="ABOVE">Acima</option>
-                  <option value="BELOW">Abaixo</option>
-                  <option value="EQUALS">Igual</option>
-                </Select>
-              </div>
-            </>
-          )}
-
-          {alertType === 'INDICATOR' && (
-            <>
-              <div>
-                <label className="block text-sm mb-1">Indicador</label>
-                <Select
-                  value={indicator}
-                  onChange={(e) => setIndicator(e.target.value)}
-                >
-                  <option value="RSI">RSI</option>
-                  <option value="MACD">MACD</option>
-                  <option value="STOCH">Estocástico</option>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Valor</label>
-                <Input
-                  type="number"
-                  value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
-                  step="any"
-                  required
-                />
-              </div>
-            </>
-          )}
-
-          {alertType === 'PATTERN' && (
-            <div>
-              <label className="block text-sm mb-1">Padrão</label>
-              <Select
-                value={pattern}
-                onChange={(e) => setPattern(e.target.value)}
-              >
-                <option value="HAMMER">Hammer</option>
-                <option value="DOJI">Doji</option>
-                <option value="ENGULFING">Engulfing</option>
-              </Select>
-            </div>
-          )}
-
+          <div>
+            <label className="block text-sm mb-1">Condição</label>
+            <Select value={condition} onValueChange={(v) => setCondition(v)}>
+              <SelectTrigger className="w-full" />
+              <SelectContent>
+                <SelectItem value="ABOVE">Acima</SelectItem>
+                <SelectItem value="BELOW">Abaixo</SelectItem>
+                <SelectItem value="EQUALS">Igual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Valor</label>
+            <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} step="any" required />
+          </div>
           <div className="flex justify-end space-x-2 pt-4">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose} type="button">
               Cancelar
             </Button>
             <Button type="submit" variant="default">

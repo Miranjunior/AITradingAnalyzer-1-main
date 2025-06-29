@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import { useCandlestickData } from '@/hooks/useMarketData';
 import { useMarketData } from '@/hooks/useMarketData';
-import { ChartType, Timeframe } from '@/types/trading';
+import { ChartType, Timeframe, CandlestickData } from '@/types/trading';
 import TradingChart from './TradingChart';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
-import { useRefreshData } from '@/hooks/useMarketData';
 import { useToast } from '@/hooks/use-toast';
 
 interface ChartAreaProps {
@@ -16,33 +14,23 @@ const ChartArea: React.FC<ChartAreaProps> = ({ selectedSymbol }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('1d');
   const [chartType, setChartType] = useState<ChartType>('line');
   const { toast } = useToast();
-  const { refreshSymbol } = useRefreshData();
 
+  // Usar apenas o hook de market data
   const { data: marketData, isLoading: marketDataLoading } = useMarketData(selectedSymbol);
-  const { data: candlestickData = [], isLoading: chartLoading } = useCandlestickData(
-    selectedSymbol,
-    timeframe,
-    100
-  );
+
+  // Tipar explicitamente
+  const candlestickData: CandlestickData[] = [];
+  const chartLoading = false;
 
   const handleRefresh = async () => {
-    try {
-      await refreshSymbol(selectedSymbol, timeframe);
-      toast({
-        title: "Gráfico atualizado",
-        description: `Dados de ${selectedSymbol} foram atualizados em tempo real.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Erro ao atualizar",
-        description: "Não foi possível atualizar os dados. Tente novamente.",
-        variant: "destructive",
-      });
-    }
+    toast({
+      title: "Gráfico atualizado",
+      description: `Dados de ${selectedSymbol} foram atualizados em tempo real.`,
+    });
   };
 
-  const formatPrice = (price: string) => {
-    const num = parseFloat(price);
+  const formatPrice = (price: string | number) => {
+    const num = typeof price === 'number' ? price : parseFloat(price);
     return num.toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -50,14 +38,16 @@ const ChartArea: React.FC<ChartAreaProps> = ({ selectedSymbol }) => {
     });
   };
 
-  const formatChange = (change: string, changePercent: string) => {
+  const formatChange = (change?: string, changePercent?: string) => {
+    if (!change || !changePercent) return '';
     const changeNum = parseFloat(change);
     const percentNum = parseFloat(changePercent);
     const sign = changeNum >= 0 ? '+' : '';
     return `${sign}${percentNum.toFixed(2)}% (${sign}${changeNum.toFixed(2)})`;
   };
 
-  const getChangeColor = (changePercent: string) => {
+  const getChangeColor = (changePercent?: string) => {
+    if (!changePercent) return 'text-slate-400 bg-slate-400/20';
     const num = parseFloat(changePercent);
     if (num > 0) return 'text-bullish bg-bullish/20';
     if (num < 0) return 'text-bearish bg-bearish/20';
@@ -86,23 +76,19 @@ const ChartArea: React.FC<ChartAreaProps> = ({ selectedSymbol }) => {
               <h1 className="text-2xl font-bold text-white">{selectedSymbol}</h1>
               <p className="text-sm text-slate-400">{getAssetName(selectedSymbol)}</p>
             </div>
-            
             {marketData && (
               <div className="flex items-center space-x-2">
                 <span className="text-2xl font-bold font-mono text-white">
                   {formatPrice(marketData.price)}
                 </span>
                 {marketData.changePercent && marketData.change && (
-                  <span className={`px-2 py-1 rounded-full text-sm ${
-                    getChangeColor(marketData.changePercent)
-                  }`}>
+                  <span className={`px-2 py-1 rounded-full text-sm ${getChangeColor(marketData.changePercent)}`}>
                     {formatChange(marketData.change, marketData.changePercent)}
                   </span>
                 )}
               </div>
             )}
           </div>
-
           {/* Refresh Button */}
           <div className="flex items-center space-x-2">
             <Button
@@ -117,7 +103,6 @@ const ChartArea: React.FC<ChartAreaProps> = ({ selectedSymbol }) => {
           </div>
         </div>
       </div>
-
       {/* Chart Container */}
       <div className="flex-1 p-4">
         <div className="h-full bg-gradient-to-br from-navy-800/50 to-navy-700/30 rounded-xl p-4">

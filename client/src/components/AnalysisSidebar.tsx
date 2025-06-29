@@ -3,9 +3,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TrendingUp, TrendingDown, Minus, BarChart3, Target, AlertTriangle, Binary } from 'lucide-react';
-import { useAIAnalysis, useMarketStatus } from '@/hooks/useAIAnalysis';
-import { useTechnicalIndicators } from '@/hooks/useMarketData';
+import { TrendingUp, TrendingDown, Minus, BarChart3, AlertTriangle, Binary } from 'lucide-react';
+import { useAIAnalysis } from '@/hooks/useAIAnalysis';
 import { Timeframe } from '@/types/trading';
 import BinaryOptionsPanel from './BinaryOptionsPanel';
 
@@ -19,8 +18,6 @@ const AnalysisSidebar: React.FC<AnalysisSidebarProps> = ({
   timeframe,
 }) => {
   const { data: analysis, isLoading: analysisLoading } = useAIAnalysis(selectedSymbol, timeframe);
-  const { data: indicators, isLoading: indicatorsLoading } = useTechnicalIndicators(selectedSymbol, timeframe);
-  const { data: marketStatus } = useMarketStatus();
 
   const getRecommendationColor = (recommendation: string) => {
     switch (recommendation) {
@@ -49,20 +46,6 @@ const AnalysisSidebar: React.FC<AnalysisSidebarProps> = ({
   return (
     <div className="w-80 bg-navy-900/80 border-l border-navy-600 p-4 overflow-y-auto">
       <div className="space-y-4">
-        {/* Market Status */}
-        <Card className="p-4 bg-navy-800/50 border-navy-600">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-white">Status do Mercado</h3>
-            <div className={`w-3 h-3 rounded-full ${marketStatus?.isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
-          </div>
-          <p className="text-sm text-slate-400">
-            {marketStatus?.isOpen ? 'Mercado Aberto' : 'Mercado Fechado'}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Última atualização: {new Date().toLocaleTimeString('pt-BR')}
-          </p>
-        </Card>
-
         {/* Analysis Tabs */}
         <Tabs defaultValue="analysis" className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-navy-800">
@@ -129,55 +112,6 @@ const AnalysisSidebar: React.FC<AnalysisSidebarProps> = ({
                 <div className="text-center py-4">
                   <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto mb-2" />
                   <p className="text-slate-400 text-sm">Análise não disponível</p>
-                </div>
-              )}
-            </Card>
-
-            {/* Technical Indicators */}
-            <Card className="p-4 bg-navy-800/50 border-navy-600">
-              <h3 className="text-lg font-semibold text-white mb-3">Indicadores Técnicos</h3>
-              
-              {indicatorsLoading ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
-                  <p className="text-slate-400 text-sm mt-2">Calculando...</p>
-                </div>
-              ) : indicators ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-2 bg-navy-700/30 rounded">
-                      <p className="text-xs text-slate-400">RSI</p>
-                      <p className="text-sm font-medium text-white">
-                        {indicators.rsi ? parseFloat(indicators.rsi).toFixed(2) : 'N/A'}
-                      </p>
-                    </div>
-                    
-                    <div className="p-2 bg-navy-700/30 rounded">
-                      <p className="text-xs text-slate-400">MACD</p>
-                      <p className="text-sm font-medium text-white">
-                        {indicators.macd ? parseFloat(indicators.macd).toFixed(4) : 'N/A'}
-                      </p>
-                    </div>
-                    
-                    <div className="p-2 bg-navy-700/30 rounded">
-                      <p className="text-xs text-slate-400">MA 20</p>
-                      <p className="text-sm font-medium text-white">
-                        {indicators.sma20 ? parseFloat(indicators.sma20).toFixed(2) : 'N/A'}
-                      </p>
-                    </div>
-                    
-                    <div className="p-2 bg-navy-700/30 rounded">
-                      <p className="text-xs text-slate-400">MA 50</p>
-                      <p className="text-sm font-medium text-white">
-                        {indicators.sma50 ? parseFloat(indicators.sma50).toFixed(2) : 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <Target className="h-8 w-8 text-slate-500 mx-auto mb-2" />
-                  <p className="text-slate-400 text-sm">Indicadores não disponíveis</p>
                 </div>
               )}
             </Card>
