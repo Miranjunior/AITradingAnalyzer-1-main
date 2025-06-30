@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import path from "path";
 
 const app = express();
 app.use(express.json());
@@ -53,7 +54,11 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    // Serve arquivos estáticos do build do Vite
+    app.use(express.static(path.resolve("client", "dist")));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.resolve("client", "dist", "index.html"));
+    });
   }
 
   // ALWAYS serve the app on port 5000
