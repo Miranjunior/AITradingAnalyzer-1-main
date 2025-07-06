@@ -6,7 +6,7 @@
   "scripts": {
     "type-check": "tsc --noEmit",
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --bundle --outfile=dist/server/index.js && mkdir -p dist/public && cp -r client/dist/* dist/public/",
+    "build": "vite build && esbuild server/index.ts --platform=node --bundle --format=esm --outfile=dist/server/index.js && mkdir -p dist/public && cp -r client/dist/* dist/public/",
     "start": "NODE_ENV=production node dist/server/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push"
