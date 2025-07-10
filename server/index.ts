@@ -43,41 +43,43 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+// Remove o listen para ambiente serverless (Vercel)
+if (!process.env.VERCEL) {
+  (async () => {
+    const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    // Serve arquivos estáticos do build do Vite
-    app.use(express.static(path.resolve("client", "dist")));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.resolve("client", "dist", "index.html"));
+      res.status(status).json({ message });
+      throw err;
     });
-  }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = process.env.PORT || 3000;
-  server.listen({
-    port,
-    host: "127.0.0.1"
-  }, () => {
-    log(`serving on port ${port}`);
-  });
-})();
+    // importantly only setup vite in development and after
+    // setting up all the other routes so the catch-all route
+    // doesn't interfere with the other routes
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    } else {
+      // Serve arquivos estáticos do build do Vite
+      app.use(express.static(path.resolve("client", "dist")));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.resolve("client", "dist", "index.html"));
+      });
+    }
 
-// Exporta como handler para Vercel
+    // ALWAYS serve the app on port 5000
+    // this serves both the API and the client.
+    // It is the only port that is not firewalled.
+    const port = process.env.PORT || 3000;
+    server.listen({
+      port,
+      host: "127.0.0.1"
+    }, () => {
+      log(`serving on port ${port}`);
+    });
+  })();
+}
+
 export default app;
