@@ -15,9 +15,9 @@ def get_latest_prediction():
     # Limpeza básica: remover NaN e duplicatas
     df = df.drop_duplicates().dropna()
     # Calcular Retorno Diário
-    df["RetornoDiario"] = df["Close"].pct_change()
+    df["RetornoDiario"] = df["Fechamento"].pct_change()
     # Calcular Média Móvel Simples de 20 períodos
-    df["MMS_20"] = df["Close"].rolling(window=20).mean()
+    df["MMS_20"] = df["Fechamento"].rolling(window=20).mean()
     # Calcular RSI (Relative Strength Index)
     def calc_rsi(series, period=14):
         delta = series.diff()
@@ -25,9 +25,9 @@ def get_latest_prediction():
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
-    df["RSI"] = calc_rsi(df["Close"])
+    df["RSI"] = calc_rsi(df["Fechamento"])
     # Remover linhas com NaN nas features
-    df = df.dropna(subset=["RetornoDiario", "MMS_20", "RSI"]) 
+    df = df.dropna(subset=["RetornoDiario", "MMS_20", "RSI"])
     # Selecionar última linha com features
     last_row = df.iloc[[-1]]
     features = last_row[["RetornoDiario", "MMS_20", "RSI"]]
