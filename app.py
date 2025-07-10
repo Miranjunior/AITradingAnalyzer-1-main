@@ -12,6 +12,10 @@ def load_model():
 # Função para calcular features e obter previsão
 def get_latest_prediction():
     df = pd.read_csv("WINFUT_M5.csv", sep='\t')
+    # Renomear colunas para garantir compatibilidade
+    df.rename(columns={'<DATE>': 'Data', '<TIME>': 'Hora', '<OPEN>': 'Abertura',
+                      '<HIGH>': 'Maxima', '<LOW>': 'Minima', '<CLOSE>': 'Fechamento',
+                      '<TICKVOL>': 'Tickvol', '<VOL>': 'Volume', '<SPREAD>': 'Spread'}, inplace=True)
     # Limpeza básica: remover NaN e duplicatas
     df = df.drop_duplicates().dropna()
     # Calcular Retorno Diário
@@ -33,7 +37,7 @@ def get_latest_prediction():
     features = last_row[["RetornoDiario", "MMS_20", "RSI"]]
     modelo = load_model()
     pred = modelo.predict(features)[0]
-    last_date = last_row["Date"].values[0] if "Date" in last_row else last_row.index[0]
+    last_date = last_row["Data"].values[0] if "Data" in last_row else last_row.index[0]
     return pred, last_date, df
 
 # Obter previsão e exibir resultado
