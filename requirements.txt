@@ -1,7 +1,5 @@
 # cole/substitua este conteúdo no seu requirements.txt
 pandas
-matplotlib
-seaborn
 scikit-learn
 fastapi
 uvicorn[standard]
