@@ -32,12 +32,12 @@ def get_latest_prediction():
     df["RSI"] = calc_rsi(df["Fechamento"])
     # Remover linhas com NaN nas features
     df = df.dropna(subset=["RetornoDiario", "MMS_20", "RSI"])
-    # Selecionar última linha com features
-    last_row = df.iloc[[-1]]
-    features = last_row[["RetornoDiario", "MMS_20", "RSI"]]
+    # Selecionar última linha com features na mesma ordem do treino
+    features = ['Abertura', 'Maxima', 'Minima', 'Fechamento', 'Volume', 'RetornoDiario', 'MMS_20', 'RSI']
+    last_row = df.iloc[[-1]][features]
     modelo = load_model()
-    pred = modelo.predict(features)[0]
-    last_date = last_row["Data"].values[0] if "Data" in last_row else last_row.index[0]
+    pred = modelo.predict(last_row)[0]
+    last_date = df.iloc[-1]['Data'] if 'Data' in df.columns else last_row.index[0]
     return pred, last_date, df
 
 # Obter previsão e exibir resultado
