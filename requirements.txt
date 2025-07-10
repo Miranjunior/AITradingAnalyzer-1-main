@@ -1,6 +1,5 @@
 # cole/substitua este conteúdo no seu requirements.txt
 pandas
 scikit-learn
-fastapi
-uvicorn[standard]
 joblib
+streamlit
