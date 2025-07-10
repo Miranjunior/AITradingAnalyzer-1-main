@@ -1,20 +1,23 @@
 # cole este código no seu novo arquivo api.py
 from fastapi import FastAPI
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+import joblib
 
 # Inicia a aplicação FastAPI
 app = FastAPI()
 
-def run_analysis():
+# Carrega o modelo treinado uma vez ao iniciar a aplicação
+try:
+    modelo = joblib.load('modelo_treinado.joblib')
+except Exception as e:
+    modelo = None
+    print(f"Erro ao carregar modelo: {e}")
+
+def carregar_e_preparar_ultima_linha():
     """
-    Esta função encapsula toda a lógica de análise de dados e treinamento do modelo.
+    Carrega o CSV, calcula as features e retorna a última linha pronta para previsão.
     """
-    # 1. Carregar e Limpar Dados
     try:
-        # Garante que o Vercel encontre o arquivo no caminho certo
         df = pd.read_csv('WINFUT_M5.csv', sep='\t')
         df.rename(columns={'<DATE>': 'Data', '<TIME>': 'Hora', '<OPEN>': 'Abertura',
                            '<HIGH>': 'Maxima', '<LOW>': 'Minima', '<CLOSE>': 'Fechamento',
@@ -23,9 +26,10 @@ def run_analysis():
         df.set_index('Data', inplace=True)
         df.drop(columns=['Hora', 'Tickvol', 'Spread'], inplace=True)
     except FileNotFoundError:
-        return {"error": "Arquivo WINFUT_M5.csv não encontrado no repositório."}
-    
-    # 2. Engenharia de Atributos (Features)
+        return None, "Arquivo WINFUT_M5.csv não encontrado."
+    except Exception as e:
+        return None, f"Erro ao carregar dados: {e}"
+
     df['RetornoDiario'] = df['Fechamento'].pct_change()
     df['MMS_20'] = df['Fechamento'].rolling(window=20).mean()
     delta = df['Fechamento'].diff()
@@ -35,41 +39,24 @@ def run_analysis():
     df['RSI'] = 100 - (100 / (1 + rs))
     df.dropna(inplace=True)
 
-    # 3. Definir Alvo
-    df['Alvo'] = (df['Fechamento'].shift(-1) > df['Fechamento']).astype(int)
-    df.dropna(inplace=True)
-
     if df.empty:
-        return {"error": "Não há dados suficientes para treinar o modelo após a limpeza."}
+        return None, "Não há dados suficientes para previsão."
 
-    # 4. Preparar para o Modelo
     features = ['Abertura', 'Maxima', 'Minima', 'Fechamento', 'Volume', 'RetornoDiario', 'MMS_20', 'RSI']
-    X = df[features]
-    y = df['Alvo']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    
-    if len(X_train) == 0 or len(X_test) == 0:
-        return {"error": "Não há dados suficientes nos conjuntos de treino/teste."}
-    
-    # 5. Treinar e Avaliar o Modelo
-    modelo = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    modelo.fit(X_train, y_train)
-    previsoes = modelo.predict(X_test)
-    acuracia = accuracy_score(y_test, previsoes)
-    
-    # Retorna um dicionário com os resultados (formato JSON)
-    return {
-        "message": "Análise concluída com sucesso!",
-        "model": "RandomForestClassifier",
-        "accuracy": f"{acuracia:.2%}",
-        "test_set_size": len(X_test)
-    }
+    ultima_linha = df[features].iloc[[-1]]
+    return ultima_linha, None
 
 @app.get("/")
 def read_root():
-    return {"message": "Bem-vindo à API de Análise de Trading. Acesse /analyze para rodar a análise."}
+    return {"message": "API pronta para previsão. Use /analyze para obter a previsão do modelo."}
 
 @app.get("/analyze")
-def analyze_trading_data():
-    results = run_analysis()
-    return results
+def analyze():
+    if modelo is None:
+        return {"error": "Modelo não carregado. Treine e salve o modelo primeiro."}
+    ultima_linha, erro = carregar_e_preparar_ultima_linha()
+    if erro:
+        return {"error": erro}
+    pred = modelo.predict(ultima_linha)[0]
+    resultado = "Alta" if pred == 1 else "Baixa"
+    return {"previsao": resultado}
