@@ -11,7 +11,7 @@ def load_model():
 
 # Função para calcular features e obter previsão
 def get_latest_prediction():
-    df = pd.read_csv("WINFUT_M5.csv")
+    df = pd.read_csv("WINFUT_M5.csv", sep='\t')
     # Limpeza básica: remover NaN e duplicatas
     df = df.drop_duplicates().dropna()
     # Calcular Retorno Diário
