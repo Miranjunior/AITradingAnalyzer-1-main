@@ -79,5 +79,5 @@ app.get('*', (req, res) => {
   });
 })();
 
-// Export the app for Netlify Functions
-export { app };
+// Exporta como handler para Vercel
+export default app;
